@@ -428,36 +428,49 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   const padLng = padLat / Math.max(.2, Math.cos(midLat * Math.PI / 180));
   const box = [Math.max(-85, south-padLat), Math.max(-180, west-padLng), Math.min(85, north+padLat), Math.min(180, east+padLng)];
   const [s,w,n,e] = box;
-  const query = '[out:json][timeout:40];(' +
+  // Sépare les empreintes de bâtiments de la végétation : une réponse très lourde
+  // pour les arbres/forêts ne doit jamais empêcher l'affichage des bâtiments.
+  const buildingQuery = '[out:json][timeout:25];(' +
     'way["building"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'relation["building"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
+    ');out body geom;';
+  const vegetationQuery = '[out:json][timeout:25];(' +
     'node["natural"="tree"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'way["landuse"~"forest|orchard"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'relation["landuse"~"forest|orchard"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'way["natural"~"wood|scrub"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'relation["natural"~"wood|scrub"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     ');out body geom;';
-  let data = null, lastError = null;
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.private.coffee/api/interpreter'
   ];
-  // GET évite certains blocages CORS/réseau qui affectent les POST cross-origin.
-  for (const endpoint of endpoints) {
-    try {
-      const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
-        method: 'GET', signal: AbortSignal.timeout(20000), cache: 'no-store'
-      });
-      if (!response.ok) throw new Error('HTTP ' + response.status);
-      data = await response.json();
-      if (data && Array.isArray(data.elements)) break;
-      throw new Error('Réponse OSM invalide');
-    } catch (err) { lastError = err; data = null; }
+  async function fetchOSM(query) {
+    let lastError = null;
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
+          method: 'GET', signal: AbortSignal.timeout(18000), cache: 'no-store'
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result && Array.isArray(result.elements)) return result;
+        throw new Error('Réponse OSM invalide');
+      } catch (err) { lastError = err; }
+    }
+    throw new Error(String(lastError && lastError.message || 'erreur réseau'));
   }
-  if (!data || !Array.isArray(data.elements)) {
-    throw new Error('API OpenStreetMap inaccessible : ' + String(lastError && lastError.message || 'erreur réseau') + '. Le navigateur ou le réseau bloque peut-être les requêtes externes.');
+  let buildingData;
+  try {
+    buildingData = await fetchOSM(buildingQuery);
+  } catch (err) {
+    throw new Error('Impossible de charger les empreintes de bâtiments OpenStreetMap : ' + String(err.message || err));
   }
+  let vegetationData = {elements:[]};
+  try { vegetationData = await fetchOSM(vegetationQuery); }
+  catch (err) { console.warn('Végétation OSM indisponible ; les bâtiments restent affichés.', err); }
+  const data = {elements:[...(buildingData.elements || []), ...(vegetationData.elements || [])]};
   const project = g => ({
     x: (g.lon * Math.PI / 180 - originLng) * cosLat * R - cx,
     z: -(g.lat * Math.PI / 180 - originLat) * R - cz
@@ -678,7 +691,7 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
     const nx=-dz,nz=dx;
     for(const side of [-1,1]) for(let row=0;row<3;row++){
       const seed=(i*17+row*31+(side>0?13:7))%29;
-      const offset=roadWidth/2+7+row*10+seed*.65;
+      const offset=roadWidth/2+22+row*12+seed*.65;
       const x=p.x+nx*offset*side, z=p.z+nz*offset*side;
       const tree=new THREE.Group();
       const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=.9; tree.add(trunk);
