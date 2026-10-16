@@ -398,16 +398,27 @@ async function addElevation(pts){
   // Référence relative au départ, tout en conservant le profil vertical mesuré.
   const base = pts[0].y;
   const raw = pts.map(p => p.y - base);
-  // Un seul lissage léger réduit le bruit de mesure sans effacer les pentes.
-  // Les extrémités sont préservées pour éviter une variation artificielle au départ/à l'arrivée.
-  const filtered = raw.slice();
-  for (let i = 1; i < raw.length - 1; i++) {
-    const neighborMean = (raw[i - 1] + raw[i + 1]) / 2;
-    const deviation = Math.abs(raw[i] - neighborMean);
-    filtered[i] = deviation > 8
-      ? neighborMean + Math.sign(raw[i] - neighborMean) * Math.min(8, deviation) * 0.35
-      : (raw[i - 1] + 2 * raw[i] + raw[i + 1]) / 4;
-  }
+  // Lissage spatial sur 4 m de chaque côté : rend les montées/descentes progressives
+  // et élimine les cassures dues au bruit d'altitude, sans dépendre du pas d'échantillonnage.
+  const radius = 4;
+  const filtered = raw.map((value, i) => {
+    let sum = 0, weights = 0;
+    for (let j = i; j >= 0; j--) {
+      const distance = Math.abs(pts[i].d - pts[j].d);
+      if (distance > radius) break;
+      const weight = 1 - distance / (radius + 0.001);
+      sum += raw[j] * weight;
+      weights += weight;
+    }
+    for (let j = i + 1; j < raw.length; j++) {
+      const distance = Math.abs(pts[j].d - pts[i].d);
+      if (distance > radius) break;
+      const weight = 1 - distance / (radius + 0.001);
+      sum += raw[j] * weight;
+      weights += weight;
+    }
+    return weights ? sum / weights : value;
+  });
   pts.forEach((p, i) => { p.y = +filtered[i].toFixed(2); });
 }
 
