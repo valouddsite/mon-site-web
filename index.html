@@ -520,7 +520,7 @@ function createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, roadWidth
   return mesh;
 }
 
-async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, roadWidth) {
+async function loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, originLng, cosLat, cx, cz, roadWidth) {
   // Évite RangeError sur Math.min/max(...tableau) lorsque le tracé contient beaucoup de points.
   let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
   for (const p of pts) {
@@ -624,7 +624,8 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     return y;
   };
   let buildings = 0, trees = 0, woods = 0, skippedBuildings = 0;
-  const maxBuildings = 8000; // limite augmentée ; compromis entre davantage de bâtiments et les performances 3D
+  const buildingBatches = new Map(); // Regroupe les bâtiments par couleur de toit pour réduire les draw calls.
+  const maxBuildings = 8000; // limite augmentée ; le regroupement permet d'en afficher davantage sans milliers de meshes
   for (const el of data.elements || []) {
     const tags = el.tags || {};
     // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
@@ -680,15 +681,13 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       const roofColor = /metal|tin|steel/.test((tags['roof:material']||'').toLowerCase()) ? '#656b70' :
         /tile|slate|shingle/.test((tags['roof:material']||'').toLowerCase()) ? '#815d4c' :
         (tags['roof:colour'] || tags['building:colour'] || '#76685a');
-      const localRoofMat = new THREE.MeshStandardMaterial({ color:roofColor, roughness:1, side:THREE.DoubleSide });
-      const mesh = new THREE.Mesh(geo, [buildingMat, localRoofMat]);
       const centerX=coords.reduce((sum,p)=>sum+p.x,0)/coords.length;
       const centerZ=coords.reduce((sum,p)=>sum+p.z,0)/coords.length;
-      mesh.position.y = groundHeightAt(centerX,centerZ);
-      mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'bâtiment OSM';
-      // Déclare explicitement la couche : l'aperçu ne dépend pas uniquement du nom du mesh.
-      mesh.userData.renderLayer = 'buildings';
-      scene.add(mesh); buildings++;
+      // Intègre la hauteur au géométrie avant regroupement, afin de garder le relief local.
+      geo.translate(0, groundHeightAt(centerX,centerZ), 0);
+      if (!buildingBatches.has(roofColor)) buildingBatches.set(roofColor, []);
+      buildingBatches.get(roofColor).push(geo);
+      buildings++;
     } else if (isForest && woods < 120) {
       const geo = new THREE.ShapeGeometry(shape); geo.rotateX(-Math.PI/2);
       const mesh = new THREE.Mesh(geo, forestMat);
@@ -697,6 +696,24 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       mesh.position.y = groundHeightAt(centerX,centerZ)-.18; mesh.name = 'végétation OSM'; scene.add(mesh); woods++;
       }
     }
+  }
+  // Fusionne les empreintes par couleur de toit : des milliers de bâtiments deviennent
+  // quelques meshes au lieu d'un mesh et de matériaux par bâtiment.
+  for (const [roofColor, geometries] of buildingBatches) {
+    if (!geometries.length) continue;
+    const merged = mergeGeometries(geometries, true);
+    for (const geo of geometries) geo.dispose();
+    if (!merged) {
+      console.warn('Impossible de fusionner un lot de bâtiments OSM ; lot ignoré.');
+      continue;
+    }
+    const localRoofMat = new THREE.MeshStandardMaterial({ color:roofColor, roughness:1, side:THREE.DoubleSide });
+    const mesh = new THREE.Mesh(merged, [buildingMat, localRoofMat]);
+    mesh.castShadow = false; // les ombres de milliers de bâtiments coûteraient trop cher en temps réel
+    mesh.receiveShadow = true;
+    mesh.name = 'bâtiment OSM';
+    mesh.userData.renderLayer = 'buildings';
+    scene.add(mesh);
   }
   const trunkMat = new THREE.MeshStandardMaterial({ color:'#60452f', roughness:1 });
   const leafMats = [
@@ -865,6 +882,7 @@ async function open3D(){
   try {
     const THREE = await import('three');
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
+    const { mergeGeometries } = await import('three/addons/utils/BufferGeometryUtils.js');
     set3DLoading(16, 'Préparation de la route', 'Rééchantillonnage du tracé et calcul des courbes.');
     let pts = resample(Math.max(0.25, +$('step').value || 0.5));
     if ($('elev').checked && elevSvc) {
@@ -937,7 +955,7 @@ async function open3D(){
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
-      const decor = await loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, width);
+      const decor = await loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, originLng, cosLat, cx, cz, width);
       if (decor.trees === 0) {
         const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
         decor.trees = fallbackTrees.trees;
