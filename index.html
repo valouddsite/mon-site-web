@@ -393,12 +393,15 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   const padLng = padLat / Math.max(.2, Math.cos(midLat * Math.PI / 180));
   const box = [Math.max(-85, south-padLat), Math.max(-180, west-padLng), Math.min(85, north+padLat), Math.min(180, east+padLng)];
   const [s,w,n,e] = box;
-  const query = '[out:json][timeout:18];(' +
+  const query = '[out:json][timeout:25];(' +
     'way["building"](' + s + ',' + w + ',' + n + ',' + e + ');' +
+    'relation["building"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'node["natural"="tree"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'way["landuse"~"forest|orchard"](' + s + ',' + w + ',' + n + ',' + e + ');' +
+    'relation["landuse"~"forest|orchard"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'way["natural"~"wood|scrub"](' + s + ',' + w + ',' + n + ',' + e + ');' +
-    ');out geom 900;';
+    'relation["natural"~"wood|scrub"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
+    ');out body geom;';
   let data = null, lastError = null;
   const endpoints = [
     'https://overpass-api.de/api/interpreter',
@@ -511,8 +514,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
 }
 
 function addFallbackDecor(THREE, scene, pts, roadWidth) {
-  // Décor procédural de secours : il reste visible même si l'API OSM est bloquée.
-  // Il est illustratif et ne prétend pas représenter les bâtiments réels du lieu.
+  // Sans réponse OSM, ne pas inventer de bâtiments : utiliser un couvert arboré dense.
   const treeTrunk = new THREE.CylinderGeometry(.13,.2,1.8,5);
   const treeCrown = new THREE.ConeGeometry(1.05,2.8,6);
   const trunkMat = new THREE.MeshStandardMaterial({color:'#60452f', roughness:1});
@@ -521,12 +523,6 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
     new THREE.MeshStandardMaterial({color:'#477f3b', roughness:1}),
     new THREE.MeshStandardMaterial({color:'#28582f', roughness:1})
   ];
-  const buildingMats = [
-    new THREE.MeshStandardMaterial({color:'#aaa69d', roughness:1}),
-    new THREE.MeshStandardMaterial({color:'#c0b8a8', roughness:1}),
-    new THREE.MeshStandardMaterial({color:'#8e969b', roughness:1})
-  ];
-  const buildingGeo = new THREE.BoxGeometry(1,1,1);
   const groundHeightAt = (x,z) => {
     let best=Infinity, y=pts[0]?.y||0;
     for(let j=0;j<pts.length-1;j++){
@@ -537,39 +533,28 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
     }
     return y;
   };
-  let trees=0, buildings=0, lastTreeD=-Infinity, lastBuildingD=-Infinity;
+  let trees=0, lastTreeD=-Infinity;
+  // Trois rangées de chaque côté, rapprochées pour remplir les zones sans données.
   for(let i=1;i<pts.length-1;i++){
     const p=pts[i];
-    if(!Number.isFinite(p.d)) continue;
+    if(!Number.isFinite(p.d) || p.d-lastTreeD<7) continue;
+    lastTreeD=p.d;
     const a=pts[i-1], b=pts[i+1];
     let dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz)||1; dx/=len; dz/=len;
     const nx=-dz,nz=dx;
-    if(p.d-lastTreeD>=13){
-      lastTreeD=p.d;
-      for(let side of [-1,1]){
-        const offset=roadWidth/2+8+((i*7+side*3+30)%18);
-        const x=p.x+nx*offset*side, z=p.z+nz*offset*side;
-        const tree=new THREE.Group();
-        const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=.9; tree.add(trunk);
-        const crown=new THREE.Mesh(treeCrown,leafMats[Math.abs(i+side)%leafMats.length]); crown.position.y=2.8; tree.add(crown);
-        tree.position.set(x,groundHeightAt(x,z),z); tree.scale.setScalar(.8+((i*3)%5)*.08); tree.name='arbre décoratif de secours'; scene.add(tree); trees++;
-      }
-    }
-    if(p.d-lastBuildingD>=75){
-      lastBuildingD=p.d;
-      for(let side of [-1,1]){
-        const offset=roadWidth/2+24+((i*11+side*5+100)%24);
-        const h=5+((i*3+side+40)%4)*1.8, w=7+((i*5+side+60)%5)*1.5, depth=8+((i*7+side+80)%5)*1.7;
-        const building=new THREE.Mesh(buildingGeo,buildingMats[Math.abs(i+side)%buildingMats.length]);
-        building.scale.set(w,h,depth);
-        const bx=p.x+nx*offset*side, bz=p.z+nz*offset*side;
-        building.position.set(bx,groundHeightAt(bx,bz)+h/2,bz);
-        building.rotation.y=-Math.atan2(dz,dx); building.castShadow=true; building.receiveShadow=true;
-        building.name='bâtiment décoratif approximatif'; scene.add(building); buildings++;
-      }
+    for(const side of [-1,1]) for(let row=0;row<3;row++){
+      const seed=(i*17+row*31+(side>0?13:7))%29;
+      const offset=roadWidth/2+7+row*10+seed*.65;
+      const x=p.x+nx*offset*side, z=p.z+nz*offset*side;
+      const tree=new THREE.Group();
+      const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=.9; tree.add(trunk);
+      const crown=new THREE.Mesh(treeCrown,leafMats[(i+row+(side>0?1:0))%leafMats.length]); crown.position.y=2.8; tree.add(crown);
+      tree.position.set(x,groundHeightAt(x,z),z);
+      tree.scale.setScalar(.8+((i*3+row*5)%5)*.08);
+      tree.name='arbre de remplissage (OSM indisponible)'; scene.add(tree); trees++;
     }
   }
-  return {trees,buildings};
+  return {trees,buildings:0};
 }
 
 /* ---------- Aperçu 3D interactif ---------- */
@@ -657,7 +642,7 @@ async function open3D(){
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
       const fallback = addFallbackDecor(THREE, scene, pts, width);
-      decorStatus = 'Décor simplifié affiché (' + fallback.buildings + ' bâtiments et ' + fallback.trees + ' arbres approximatifs) : données OSM indisponibles.';
+      decorStatus = 'OpenStreetMap indisponible : ' + fallback.trees + ' arbres de remplissage affichés. Les bâtiments réels nécessitent le chargement des données OSM.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
