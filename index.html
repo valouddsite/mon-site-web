@@ -384,8 +384,14 @@ async function open3D(){
       threeState.renderer.domElement.remove();
       threeState = null;
     }
-    const host = $('preview3d'), canvas = $('scene3d');
-    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+    const host = $('preview3d');
+    // Laisse Three.js créer son propre canvas : cela évite de lui transmettre
+    // un élément canvas absent ou détaché, qui peut provoquer une erreur sur width.
+    const oldCanvas = $('scene3d');
+    const renderer = new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+    renderer.domElement.id = 'scene3d';
+    if (oldCanvas && oldCanvas.parentNode) oldCanvas.replaceWith(renderer.domElement);
+    else host.insertBefore(renderer.domElement, host.querySelector('.help'));
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     renderer.setSize(host.clientWidth, Math.max(300, host.clientHeight - 100), false);
     renderer.shadowMap.enabled = true;
