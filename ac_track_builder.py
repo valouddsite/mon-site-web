@@ -320,6 +320,37 @@ def build_track(ll, name='ma_piste', out='build', width=9, step=3, smooth_passes
     open(os.path.join(src, name + '.obj'), 'w').write('# 1 unité = 1 m, Y haut\n' + '\n'.join(o.lines) + '\n')
     json.dump({'track': name, 'markers': mk}, open(os.path.join(src, 'markers.json'), 'w'), indent=1)
     open(os.path.join(src, 'build_fbx.py'), 'w', encoding='utf-8').write(BLENDER)
+    # Configuration Assetto Corsa : le KN5 sera créé depuis le FBX via KsEditor.
+    open(os.path.join(root, 'models.ini'), 'w', encoding='utf-8').write(
+        '[MODEL_0]\nFILE=track.kn5\nPOSITION=0,0,0\nROTATION=0,0,0\n')
+    install_readme = '''INSTALLATION ASSETTO CORSA
+==========================
+
+Ce pack est une base de circuit. Il ne devient chargeable par le jeu qu'une fois
+le fichier track.kn5 créé dans KsEditor.
+
+1. Ouvrir le FBX à la racine du dossier dans KsEditor.
+   Si le FBX manque, ouvrir un terminal dans source/ et exécuter :
+   blender -b -P build_fbx.py
+2. Dans KsEditor, vérifier les matériaux et les textures PNG situées à la racine.
+   Exporter le modèle final sous le nom exact : track.kn5
+3. Vérifier que track.kn5 se trouve à côté de models.ini.
+4. Copier le dossier complet dans :
+   <Assetto Corsa>/content/tracks/<nom_de_la_piste>/
+5. Lancer le jeu et vérifier la piste. Une ligne IA fast_lane.ai n'est pas
+   générée automatiquement : elle doit être enregistrée/produite séparément.
+
+Contenu :
+- models.ini : référence le modèle track.kn5 attendu par le jeu
+- data/surfaces.ini : propriétés de grip des surfaces
+- ui/ui_track.json : nom et informations de la piste
+- map.png, ui/outline.png, data/map.ini : aperçu et données de carte
+- source/ : OBJ, marqueurs et script Blender de conversion
+
+Le relief du terrain est procédural et ne représente pas des données topographiques
+réelles. Le FBX/KN5 doit être vérifié dans KsEditor et dans le jeu.
+'''
+    open(os.path.join(root, 'LISEZ-MOI-INSTALLATION.txt'), 'w', encoding='utf-8').write(install_readme)
     open(os.path.join(root, 'data/surfaces.ini'), 'w').write(surfaces())
     json.dump({'name': name.replace('_', ' ').title(), 'description': 'Piste générée avec AC Track Builder.',
                'tags': ['road', 'circuit' if closed else 'point to point'], 'country': country, 'city': city,
