@@ -624,7 +624,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     return y;
   };
   let buildings = 0, trees = 0, woods = 0, skippedBuildings = 0;
-  const maxBuildings = 3500; // limite de sécurité nettement plus haute pour les zones urbaines denses
+  const maxBuildings = 12000; // évite de couper trop tôt les quartiers denses ; garde-fou contre les scènes démesurées
   for (const el of data.elements || []) {
     const tags = el.tags || {};
     // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
