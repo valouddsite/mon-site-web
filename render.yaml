@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: ac-track-studio
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: python --version
+    startCommand: python server.py --port $PORT --no-browser
+    healthCheckPath: /api/status
+    autoDeploy: true
