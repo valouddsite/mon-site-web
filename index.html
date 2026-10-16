@@ -413,8 +413,10 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   const forestMat = new THREE.MeshStandardMaterial({ color:'#416d37', roughness:1, side:THREE.DoubleSide });
   let buildings = 0, trees = 0, woods = 0;
   for (const el of data.elements || []) {
-    if (!el.geometry || el.geometry.length < 3) continue;
     const tags = el.tags || {};
+    // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
+    if (el.type === 'node') continue;
+    if (!el.geometry || el.geometry.length < 3) continue;
     const isBuilding = !!tags.building;
     const isForest = tags.landuse === 'forest' || tags.landuse === 'orchard' || tags.natural === 'wood' || tags.natural === 'scrub';
     if (!isBuilding && !isForest) continue;
