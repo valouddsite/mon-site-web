@@ -393,7 +393,7 @@ function smoothPreviewPoints(source, passes = 2) {
   return pts;
 }
 
-async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz) {
+async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, roadWidth) {
   // Évite RangeError sur Math.min/max(...tableau) lorsque le tracé contient beaucoup de points.
   let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
   for (const p of pts) {
@@ -552,7 +552,23 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     new THREE.MeshStandardMaterial({ color:'#477f3b', roughness:1 }),
     new THREE.MeshStandardMaterial({ color:'#28582f', roughness:1 })
   ];
-  const treeNodes = (data.elements || []).filter(el => el.type === 'node' && el.tags && el.tags.natural === 'tree' && Number.isFinite(el.lat) && Number.isFinite(el.lon)).slice(0, 1000);
+  // Exclut les arbres qui tombent sur la chaussée : les données OSM peuvent
+  // contenir des arbres plantés sur le bord immédiat ou au milieu de routes.
+  const minTreeDistance = Math.max(roadWidth / 2 + 2.5, 6);
+  const treeNodes = (data.elements || []).filter(el => {
+    if (el.type !== 'node' || !el.tags || el.tags.natural !== 'tree' ||
+        !Number.isFinite(el.lat) || !Number.isFinite(el.lon)) return false;
+    const p = project({lat:el.lat,lon:el.lon});
+    let nearest2 = Infinity;
+    for (let i=0; i<pts.length-1; i++) {
+      const a=pts[i], b=pts[i+1], dx=b.x-a.x, dz=b.z-a.z;
+      const den=dx*dx+dz*dz;
+      const t=den?Math.max(0,Math.min(1,((p.x-a.x)*dx+(p.z-a.z)*dz)/den)):0;
+      const ex=p.x-(a.x+t*dx), ez=p.z-(a.z+t*dz);
+      nearest2=Math.min(nearest2,ex*ex+ez*ez);
+    }
+    return nearest2 >= minTreeDistance*minTreeDistance;
+  }).slice(0, 1000);
   const trunkGeo = new THREE.CylinderGeometry(.12,.2,1,6);
   const broadleafGeo = new THREE.SphereGeometry(1,7,5);
   const coniferGeo = new THREE.ConeGeometry(1,1,7);
@@ -571,6 +587,46 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     group.name=conifer?'conifère OSM':'arbre feuillu OSM'; scene.add(group); trees++;
   }
   return { buildings, trees, woods };
+}
+
+function addFallbackBuildings(THREE, scene, pts, roadWidth) {
+  // Maisons simples de secours : utilisées uniquement si OSM ne fournit aucun bâtiment.
+  // Elles restent suffisamment éloignées du centre de la route.
+  const wallMat = new THREE.MeshStandardMaterial({color:'#c8bca7', roughness:1});
+  const roofMat = new THREE.MeshStandardMaterial({color:'#765044', roughness:1});
+  const groundHeightAt = (x,z) => {
+    let best=Infinity, y=pts[0]?.y||0;
+    for(let j=0;j<pts.length-1;j++){
+      const a=pts[j], b=pts[j+1], dx=b.x-a.x, dz=b.z-a.z, den=dx*dx+dz*dz;
+      const t=den?Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/den)):0;
+      const px=a.x+t*dx, pz=a.z+t*dz, d=(px-x)*(px-x)+(pz-z)*(pz-z);
+      if(d<best){best=d;y=(a.y||0)+t*((b.y||0)-(a.y||0));}
+    }
+    return y;
+  };
+  const spacing=55;
+  let lastD=-Infinity, count=0;
+  for(let i=1;i<pts.length-1;i++){
+    const p=pts[i];
+    if(!Number.isFinite(p.d) || p.d-lastD<spacing) continue;
+    lastD=p.d;
+    const a=pts[i-1], b=pts[i+1];
+    let dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz)||1; dx/=len; dz/=len;
+    const side=(count%2===0)?1:-1, nx=-dz, nz=dx;
+    const offset=roadWidth/2+14+(count%3)*7;
+    const x=p.x+nx*offset*side, z=p.z+nz*offset*side;
+    const h=4.5+(count%3)*.5, w=7+(count%2)*2, depth=6+(count%3);
+    const house=new THREE.Group();
+    const walls=new THREE.Mesh(new THREE.BoxGeometry(w,h,depth),wallMat);
+    walls.position.y=h/2; walls.castShadow=true; walls.receiveShadow=true; house.add(walls);
+    const roof=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,depth)*.72,2.8,4),roofMat);
+    roof.rotation.y=Math.PI/4; roof.position.y=h+1.1; roof.castShadow=true; house.add(roof);
+    house.position.set(x,groundHeightAt(x,z),z);
+    house.name='maison de secours (données OSM absentes)';
+    scene.add(house); count++;
+    if(count>=80) break;
+  }
+  return count;
 }
 
 function addFallbackDecor(THREE, scene, pts, roadWidth) {
@@ -709,8 +765,9 @@ async function open3D(){
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
-      const decor = await loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz);
-      decorStatus = decor.buildings + ' bâtiments, ' + decor.trees + ' arbres, ' + decor.woods + ' zones boisées.';
+      const decor = await loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, width);
+      if (decor.buildings === 0) decor.buildings = addFallbackBuildings(THREE, scene, pts, width);
+      decorStatus = decor.buildings + ' bâtiments (données OSM ou secours), ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.';
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
