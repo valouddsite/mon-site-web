@@ -431,7 +431,11 @@ async function open3D(){
     say('Aperçu 3D prêt. Tu peux tourner et zoomer sur le tracé.');
   } catch(e) {
     console.error('Aperçu 3D indisponible',e);
-    say('Impossible de charger le rendu 3D. Vérifie ta connexion internet et que le navigateur autorise WebGL.',true);
+    const detail = String(e && (e.message || e) || 'erreur inconnue');
+    let friendly = 'Aperçu 3D : ' + detail.slice(0, 180);
+    if (/WebGL|context/i.test(detail)) friendly = 'WebGL n’est pas disponible dans ce navigateur ou sur cet appareil. Essaie un navigateur récent avec l’accélération graphique activée.';
+    else if (/import|module|specifier|fetch|network/i.test(detail)) friendly = 'Impossible de télécharger les modules 3D. Vérifie la connexion, désactive temporairement le bloqueur de contenu pour ce site puis réessaie. Détail : ' + detail.slice(0, 120);
+    say(friendly,true);
   }
 }
 function fit3DCamera(s){
