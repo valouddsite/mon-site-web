@@ -985,6 +985,7 @@ async function open3D(){
     const terrainBounds = { ...bounds, minX: bounds.minX - cx, maxX: bounds.maxX - cx, minZ: bounds.minZ - cz, maxZ: bounds.maxZ - cz };
     const ground = createSurroundingTerrain(THREE, scene, pts, terrainBounds, shoulder, width);
     let decorStatus = 'Décor OSM non chargé.';
+    let buildingGenerationFailed = false;
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
@@ -992,7 +993,12 @@ async function open3D(){
       // Prépare aussi des bâtiments automatiques pour laisser l'utilisateur choisir la source.
       const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
       if (decor.buildings === 0) {
-        decorStatus = generatedBuildings + ' bâtiments générés automatiquement (aucun bâtiment OSM disponible). ';
+        if (generatedBuildings > 0) {
+          decorStatus = generatedBuildings + ' bâtiments générés automatiquement (aucun bâtiment OSM disponible). ';
+        } else {
+          buildingGenerationFailed = true;
+          decorStatus = 'ATTENTION : aucun bâtiment n’a pu être généré. OpenStreetMap n’a fourni aucun bâtiment et la génération automatique a échoué. ';
+        }
       }
       if (decor.trees === 0) {
         const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
@@ -1006,7 +1012,12 @@ async function open3D(){
       const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
       const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
       $('buildingMode').value = 'auto';
-      decorStatus = 'OpenStreetMap indisponible : ' + generatedBuildings + ' bâtiments générés automatiquement et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
+      if (generatedBuildings === 0) {
+        buildingGenerationFailed = true;
+        decorStatus = 'ATTENTION : aucun bâtiment n’a pu être généré. OpenStreetMap est indisponible et la génération automatique n’a produit aucun bâtiment. ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
+      } else {
+        decorStatus = 'OpenStreetMap indisponible : ' + generatedBuildings + ' bâtiments générés automatiquement et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
+      }
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
@@ -1025,7 +1036,7 @@ async function open3D(){
     };
     window.addEventListener('resize', threeState.resizeHandler, {passive:true});
     set3DLoading(100, 'Rendu 3D terminé', 'La route et le décor sont prêts.');
-    say('Aperçu 3D prêt. Route lissée, sans brouillard. ' + decorStatus);
+    say('Aperçu 3D prêt. Route lissée, sans brouillard. ' + decorStatus, buildingGenerationFailed);
     setTimeout(hide3DLoading, 350);
   } catch(e) {
     hide3DLoading();
