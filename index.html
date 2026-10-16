@@ -53,7 +53,7 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
     <h2>Connecter Google Maps</h2>
     <ol>
       <li>Crée une clé sur <code>console.cloud.google.com</code></li>
-      <li>Active : Maps JavaScript, Directions, Elevation, Geocoding</li>
+      <li>Active : Maps JavaScript API, Routes API, Elevation API et Geocoding API</li>
       <li>Colle la clé ci-dessous</li>
     </ol>
     <input id="key" type="password" placeholder="Clé API Google Maps" autocomplete="off">
@@ -133,7 +133,7 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
 <div id="map"></div>
 
 <script>
-let map, dirSvc, elevSvc, geocoder, poly = null;
+let map, elevSvc, geocoder, poly = null;
 let startM = null, endM = null, wps = [];
 let mode = 'start', path = [], timer = null, seq = 0;
 const $ = id => document.getElementById(id);
@@ -166,7 +166,6 @@ function initMap(){
     center: { lat: 45.0, lng: 6.4 }, zoom: 11, mapTypeId: 'hybrid',
     streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy'
   });
-  dirSvc = new google.maps.DirectionsService();
   elevSvc = new google.maps.ElevationService();
   geocoder = new google.maps.Geocoder();
   map.addListener('click', e => addPoint(e.latLng));
@@ -239,42 +238,52 @@ function stats(){
   $('sLen').textContent = path.length ? (google.maps.geometry.spherical.computeLength(path) / 1000).toFixed(2) + ' km' : '–';
   $('sPts').textContent = path.length || '–';
 }
-function computeRoute(){
+async function computeRoute(){
   stats();
   const loop = $('loop').checked;
   if (!startM) return say('Place d\'abord un départ.');
   if (!loop && !endM) return say('Place maintenant une arrivée (ou coche « boucle »).');
+  if (wps.length > 25) return say('La nouvelle API Routes accepte au maximum 25 balises intermédiaires.', true);
   const dest = loop ? startM.getPosition() : endM.getPosition();
   const me = ++seq;
   say('Calcul du tracé…');
-  dirSvc.route({
-    origin: startM.getPosition(), destination: dest,
-    waypoints: wps.map(w => ({ location: w.getPosition(), stopover: false })),
-    travelMode: 'DRIVING', optimizeWaypoints: false
-  }, (res, st) => {
+  try {
+    // Nouvelle bibliothèque Routes : remplace DirectionsService (Legacy).
+    const { Route } = await google.maps.importLibrary('routes');
+    const request = {
+      origin: startM.getPosition(),
+      destination: dest,
+      intermediates: wps.map(w => ({ location: w.getPosition(), via: true })),
+      travelMode: 'DRIVING',
+      fields: ['path']
+    };
+    const result = await Route.computeRoutes(request);
     if (me !== seq) return;
-    if (st !== 'OK') {
-      const messages = {
-        REQUEST_DENIED: "Google refuse le calcul d’itinéraire. Vérifie dans Google Cloud que Directions API (ou Routes API selon la configuration) est activée, que la facturation est active et que les restrictions de la clé autorisent ce site.",
-        ZERO_RESULTS: "Aucun itinéraire routier trouvé entre ces points. Essaie de placer les points sur des routes accessibles en voiture.",
-        NOT_FOUND: "Au moins un point n’a pas été reconnu. Déplace ou replace le départ, l’arrivée ou une balise.",
-        WAYPOINTS_EXCEEDED: "Trop de balises pour une seule demande.",
-        MAX_WAYPOINTS_EXCEEDED: "Trop de balises pour une seule demande. Réduis leur nombre.",
-        OVER_QUERY_LIMIT: "Limite de requêtes Google Maps atteinte. Attends un peu avant de réessayer.",
-        INVALID_REQUEST: "La demande d’itinéraire est invalide. Vérifie le départ, l’arrivée et les balises.",
-        UNKNOWN_ERROR: "Erreur temporaire du service d’itinéraires. Réessaie dans quelques instants."
-      };
-      const detail = messages[st] || "Le service d’itinéraires a renvoyé une erreur.";
-      say(detail + " (code : " + st + ")", true);
-      console.warn("AC Track Mapper — DirectionsService:", st);
-      return;
+    if (!result.routes || !result.routes.length || !result.routes[0].path || result.routes[0].path.length < 2) {
+      path = [];
+      if (poly) { poly.setMap(null); poly = null; }
+      stats();
+      return say('Aucun itinéraire routier trouvé. Déplace les points sur des routes accessibles en voiture.', true);
     }
-    path = [];
-    res.routes[0].legs.forEach(l => l.steps.forEach(s => s.path.forEach(p => path.push(p))));
+    path = result.routes[0].path;
     if (poly) poly.setMap(null);
     poly = new google.maps.Polyline({ map, path, strokeColor: '#f2c230', strokeOpacity: .95, strokeWeight: 5, clickable: false });
-    stats(); say('Tracé prêt. Ajoute des balises pour le forcer, ou exporte.');
-  });
+    stats();
+    say('Tracé prêt. Ajoute des balises pour le forcer, ou exporte.');
+  } catch (e) {
+    if (me !== seq) return;
+    console.warn('AC Track Mapper — Route.computeRoutes:', e);
+    const msg = String(e && (e.message || e));
+    let detail = 'Le calcul a échoué. Vérifie que Routes API et Maps JavaScript API sont activées dans le même projet Google Cloud, que la facturation est active et que la clé autorise ce site.';
+    if (/REQUEST_DENIED|PERMISSION_DENIED|not authorized|API key/i.test(msg)) {
+      detail = 'Google refuse la demande. Active Routes API et Maps JavaScript API, vérifie la facturation et les restrictions de la clé API.';
+    } else if (/ZERO_RESULTS|No route|not found/i.test(msg)) {
+      detail = 'Aucun itinéraire trouvé. Essaie de déplacer les points sur des routes accessibles en voiture.';
+    } else if (/quota|rate limit|RESOURCE_EXHAUSTED/i.test(msg)) {
+      detail = 'Limite de requêtes atteinte. Attends un peu puis réessaie.';
+    }
+    say(detail, true);
+  }
 }
 
 /* ---------- Rééchantillonnage + projection locale ---------- */
