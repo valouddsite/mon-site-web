@@ -799,7 +799,8 @@ function addFallbackBuildings(THREE, scene, pts, roadWidth) {
     const roof=new THREE.Mesh(new THREE.ConeGeometry(Math.max(w,depth)*.72,2.8,4),roofMat);
     roof.rotation.y=Math.PI/4; roof.position.y=h+1.1; roof.castShadow=true; house.add(roof);
     house.position.set(x,groundHeightAt(x,z),z);
-    house.name='maison de secours (données OSM absentes)';
+    house.name='maison générée automatiquement';
+    house.userData.renderLayer='buildings';
     scene.add(house); count++;
     if(count>=80) break;
   }
@@ -964,17 +965,23 @@ async function open3D(){
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
       const decor = await loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, originLng, cosLat, cx, cz, width);
+      // Garantit un décor de bâtiments même si OSM ne fournit aucune empreinte.
+      if (decor.buildings === 0) {
+        const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
+        decorStatus = generatedBuildings + ' bâtiments générés automatiquement (aucun bâtiment OSM disponible). ';
+      }
       if (decor.trees === 0) {
         const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
         decor.trees = fallbackTrees.trees;
       }
-      decorStatus = decor.buildings + ' bâtiments issus des empreintes réelles OpenStreetMap, ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.' + (decor.skippedBuildings ? ' Attention : ' + decor.skippedBuildings + ' bâtiments supplémentaires ignorés par la limite de sécurité.' : '');
+      decorStatus += decor.buildings + ' bâtiments issus des empreintes réelles OpenStreetMap, ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.' + (decor.skippedBuildings ? ' Attention : ' + decor.skippedBuildings + ' bâtiments supplémentaires ignorés par la limite de sécurité.' : '');
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
-      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Les bâtiments ne seront pas inventés ; seuls des arbres de secours seront affichés.');
+      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments et d’arbres de secours.');
+      const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
       const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
-      decorStatus = 'OpenStreetMap indisponible : bâtiments réels non disponibles ; ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
+      decorStatus = 'OpenStreetMap indisponible : ' + generatedBuildings + ' bâtiments générés automatiquement et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
