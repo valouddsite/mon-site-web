@@ -208,7 +208,7 @@ function addPoint(pos){
     if (endM) endM.setPosition(pos); else endM = mk(pos, '#e0364b', 'A');
     setMode('wp');
   } else {
-    if (wps.length >= 23) return say('Maximum 23 balises (limite Google Directions).', true);
+    if (wps.length >= 25) return say('Maximum 25 balises intermédiaires avec Google Routes.', true);
     wps.push(mk(pos, '#f2c230', ''));
     relabel();
   }
