@@ -557,34 +557,24 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.private.coffee/api/interpreter'
   ];
-  async function fetchOSM(query, requireBuildings = false) {
+  async function fetchOSM(query) {
     let lastError = null;
-    // Les serveurs Overpass peuvent répondre temporairement avec une erreur ou
-    // une réponse vide. On essaie plusieurs miroirs avant d'abandonner le décor.
-    const start = Math.floor(Date.now() / 1000) % endpoints.length;
-    const ordered = endpoints.slice(start).concat(endpoints.slice(0, start));
-    for (let round = 0; round < 2; round++) {
-      for (const endpoint of ordered) {
-        try {
-          const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
-            method: 'GET', signal: AbortSignal.timeout(15000), cache: 'no-store'
-          });
-          if (!response.ok) throw new Error('HTTP ' + response.status);
-          const result = await response.json();
-          if (!result || !Array.isArray(result.elements)) throw new Error('Réponse OSM invalide');
-          if (requireBuildings && result.elements.length === 0) {
-            lastError = new Error('réponse vide du serveur Overpass');
-            continue;
-          }
-          return result;
-        } catch (err) { lastError = err; }
-      }
+    for (const endpoint of endpoints) {
+      try {
+        const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
+          method: 'GET', signal: AbortSignal.timeout(18000), cache: 'no-store'
+        });
+        if (!response.ok) throw new Error('HTTP ' + response.status);
+        const result = await response.json();
+        if (result && Array.isArray(result.elements)) return result;
+        throw new Error('Réponse OSM invalide');
+      } catch (err) { lastError = err; }
     }
     throw new Error(String(lastError && lastError.message || 'erreur réseau'));
   }
   let buildingData;
   try {
-    buildingData = await fetchOSM(buildingQuery, true);
+    buildingData = await fetchOSM(buildingQuery);
   } catch (err) {
     throw new Error('Impossible de charger les empreintes de bâtiments OpenStreetMap : ' + String(err.message || err));
   }
@@ -634,7 +624,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     return y;
   };
   let buildings = 0, trees = 0, woods = 0, skippedBuildings = 0;
-  const maxBuildings = 3500; // limite le nombre de meshes séparés pour éviter que le rendu 3D se bloque
+  const maxBuildings = 8000; // limite augmentée ; compromis entre davantage de bâtiments et les performances 3D
   for (const el of data.elements || []) {
     const tags = el.tags || {};
     // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
