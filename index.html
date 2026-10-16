@@ -680,6 +680,8 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       const centerZ=coords.reduce((sum,p)=>sum+p.z,0)/coords.length;
       mesh.position.y = groundHeightAt(centerX,centerZ);
       mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'bâtiment OSM';
+      // Déclare explicitement la couche : l'aperçu ne dépend pas uniquement du nom du mesh.
+      mesh.userData.renderLayer = 'buildings';
       scene.add(mesh); buildings++;
     } else if (isForest && woods < 120) {
       const geo = new THREE.ShapeGeometry(shape); geo.rotateX(-Math.PI/2);
