@@ -428,7 +428,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   const padLng = padLat / Math.max(.2, Math.cos(midLat * Math.PI / 180));
   const box = [Math.max(-85, south-padLat), Math.max(-180, west-padLng), Math.min(85, north+padLat), Math.min(180, east+padLng)];
   const [s,w,n,e] = box;
-  const query = '[out:json][timeout:25];(' +
+  const query = '[out:json][timeout:40];(' +
     'way["building"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'relation["building"]["type"="multipolygon"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     'node["natural"="tree"](' + s + ',' + w + ',' + n + ',' + e + ');' +
@@ -447,7 +447,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   for (const endpoint of endpoints) {
     try {
       const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
-        method: 'GET', signal: AbortSignal.timeout(12000), cache: 'no-store'
+        method: 'GET', signal: AbortSignal.timeout(20000), cache: 'no-store'
       });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       data = await response.json();
@@ -499,7 +499,8 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     }
     return y;
   };
-  let buildings = 0, trees = 0, woods = 0;
+  let buildings = 0, trees = 0, woods = 0, skippedBuildings = 0;
+  const maxBuildings = 3500; // limite de sécurité nettement plus haute pour les zones urbaines denses
   for (const el of data.elements || []) {
     const tags = el.tags || {};
     // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
@@ -537,7 +538,8 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       shape.moveTo(coords[0].x, -coords[0].z);
       for (let i=1; i<coords.length; i++) shape.lineTo(coords[i].x, -coords[i].z);
       shape.closePath();
-    if (isBuilding && buildings < 650) {
+    if (isBuilding) {
+      if (buildings >= maxBuildings) { skippedBuildings++; continue; }
       const levels = Math.max(1, Math.min(30, parseFloat(tags['building:levels']) || 0));
       const taggedHeight = parseFloat(String(tags.height || '').replace(/[^0-9.]/g,''));
       const height = Math.max(2.5, Math.min(90, taggedHeight || (levels ? levels * 3.15 + 0.8 : (/house|detached|garage|shed|hut/.test(tags.building) ? 5.5 : 8.5))));
@@ -602,7 +604,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     group.position.set(p.x,groundHeightAt(p.x,p.z),p.z);
     group.name=conifer?'conifère OSM':'arbre feuillu OSM'; scene.add(group); trees++;
   }
-  return { buildings, trees, woods };
+  return { buildings, trees, woods, skippedBuildings };
 }
 
 function addFallbackBuildings(THREE, scene, pts, roadWidth) {
@@ -787,7 +789,7 @@ async function open3D(){
         const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
         decor.trees = fallbackTrees.trees;
       }
-      decorStatus = decor.buildings + ' bâtiments issus des empreintes réelles OpenStreetMap, ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.';
+      decorStatus = decor.buildings + ' bâtiments issus des empreintes réelles OpenStreetMap, ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.' + (decor.skippedBuildings ? ' Attention : ' + decor.skippedBuildings + ' bâtiments supplémentaires ignorés par la limite de sécurité.' : '');
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
