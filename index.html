@@ -1141,7 +1141,7 @@ function acMesh(P, F, o, closed){
         }
         const d = Math.sqrt(d2), fade = Math.max(0, Math.min(1, (d - edge) / 45));
         const wave = (Math.sin(x * .018) * Math.cos(z * .014) * 1.1 + Math.sin((x + z) * .008) * 1.4) * fade;
-        const y = nearest.y - .35 - Math.abs(wave) - Math.max(0, d - edge) * .003;
+        const y = nearest.y - .08 - Math.abs(wave) - Math.max(0, d - edge) * .003;
         L.push('v ' + x.toFixed(3) + ' ' + y.toFixed(3) + ' ' + z.toFixed(3));
       }
     }
