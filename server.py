@@ -105,8 +105,12 @@ def main():
     ap.add_argument('--no-browser', action='store_true')
     a = ap.parse_args()
     BLENDER = B.detect_blender(a.blender)
-    srv = ThreadingHTTPServer(('127.0.0.1', a.port), Handler)
-    url = 'http://localhost:%d' % a.port
+    host = os.environ.get('HOST', '127.0.0.1')
+    if os.environ.get('PORT'):
+        a.port = int(os.environ['PORT'])
+        host = '0.0.0.0'
+    srv = ThreadingHTTPServer((host, a.port), Handler)
+    url = ('http://localhost:%d' % a.port) if host == '127.0.0.1' else ('http://%s:%d' % (host, a.port))
     print('AC Track Studio : ' + url)
     print('Blender : ' + (BLENDER or 'introuvable (le zip contiendra le script build_fbx.py à lancer toi-même)'))
     print('Ctrl+C pour arrêter.')
