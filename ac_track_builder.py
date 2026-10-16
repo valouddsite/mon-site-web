@@ -149,7 +149,7 @@ def add_surrounding_terrain(obj, pts, width, grass, margin=1000.0, cells=100):
             fade = max(0.0, min(1.0, (distance - road_edge) / 45.0))
             wave = (math.sin(x * 0.018) * math.cos(z * 0.014) * 1.1
                     + math.sin((x + z) * 0.008) * 1.4) * fade
-            y = nearest[1] - 0.35 - abs(wave) - max(0.0, distance - road_edge) * 0.003
+            y = nearest[1] - 0.08 - abs(wave) - max(0.0, distance - road_edge) * 0.003
             verts.append((x, y, z))
     obj.lines.append('o 1TERRAIN')
     for x, y, z in verts:
