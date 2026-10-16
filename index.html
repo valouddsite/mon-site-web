@@ -150,7 +150,7 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
     <label><span>Murs le long de la piste</span><input type="checkbox" id="walls" checked></label>
     <label><span>Bâtiments (OpenStreetMap)</span><input type="checkbox" id="bld" class="scen" checked></label>
     <label><span>Végétation (OpenStreetMap)</span><input type="checkbox" id="veg" class="scen" checked></label>
-    <label><span>Zone de décor autour du tracé (m)</span><input type="number" id="margin" class="scen" value="200" min="50" max="600" step="50"></label>
+    <label><span>Zone de décor autour du tracé (m)</span><input type="number" id="margin" class="scen" value="1500" min="250" max="5000" step="250"></label>
     <label><span>Arbres par hectare en forêt</span><input type="number" id="density" class="scen" value="25" min="5" max="120"></label>
     <label><span>Un point tous les (m)</span><input type="number" id="step" value="0.5" min="0.25" max="50" step="0.25"></label>
     <label><span>Ajouter l'altitude (Elevation API)</span><input type="checkbox" id="elev" checked></label>
@@ -534,7 +534,7 @@ async function loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, origi
     throw new Error('Le tracé ne contient pas de coordonnées GPS valides pour charger les bâtiments.');
   }
   // Évite les requêtes démesurées pour les itinéraires très longs.
-  const padLat = Math.min(.025, Math.max(.0015, (+$('margin').value || 200) / 111000));
+  const padLat = Math.min(.045, Math.max(.00225, (+$('margin').value || 1500) / 111000));
   const midLat = (south + north) / 2;
   const padLng = padLat / Math.max(.2, Math.cos(midLat * Math.PI / 180));
   const box = [Math.max(-85, south-padLat), Math.max(-180, west-padLng), Math.min(85, north+padLat), Math.min(180, east+padLng)];
