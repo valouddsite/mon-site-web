@@ -74,7 +74,7 @@ class Handler(BaseHTTPRequestHandler):
             r = B.build_track(
                 ll, name=name, out=tmp,
                 width=float(o.get('width', 9)), step=max(1.0, float(o.get('step', 3))),
-                smooth_passes=int(o.get('smooth', 4)), grass=float(o.get('grass', 15)), kerb=float(o.get('kerb', 1)),
+                smooth_passes=int(o.get('smooth', 5)), grass=float(o.get('grass', 15)), kerb=float(o.get('kerb', 1)),
                 walls=bool(o.get('walls', False)), grid=int(o.get('grid', 4)), pits=int(o.get('pits', 4)),
                 city=str(o.get('city', '')), country=str(o.get('country', '')), blender=BLENDER,
                 scenery=({'buildings': bool(sc.get('buildings', True)), 'trees': bool(sc.get('trees', True)),
