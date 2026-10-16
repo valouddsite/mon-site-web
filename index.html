@@ -783,19 +783,17 @@ async function open3D(){
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
       const decor = await loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, width);
-      if (decor.buildings === 0) decor.buildings = addFallbackBuildings(THREE, scene, pts, width);
       if (decor.trees === 0) {
         const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
         decor.trees = fallbackTrees.trees;
       }
-      decorStatus = decor.buildings + ' bâtiments (données OSM ou secours), ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.';
+      decorStatus = decor.buildings + ' bâtiments issus des empreintes réelles OpenStreetMap, ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.';
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
-      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments et d’arbres placés sur les côtés de la route.');
-      const fallbackBuildings = addFallbackBuildings(THREE, scene, pts, width);
+      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Les bâtiments ne seront pas inventés ; seuls des arbres de secours seront affichés.');
       const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
-      decorStatus = 'OpenStreetMap indisponible : ' + fallbackBuildings + ' bâtiments simples et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
+      decorStatus = 'OpenStreetMap indisponible : bâtiments réels non disponibles ; ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
