@@ -253,7 +253,22 @@ function computeRoute(){
     travelMode: 'DRIVING', optimizeWaypoints: false
   }, (res, st) => {
     if (me !== seq) return;
-    if (st !== 'OK') { say('Aucun itinéraire (' + st + '). Rapproche les points des routes.', true); return; }
+    if (st !== 'OK') {
+      const messages = {
+        REQUEST_DENIED: "Google refuse le calcul d’itinéraire. Vérifie dans Google Cloud que Directions API (ou Routes API selon la configuration) est activée, que la facturation est active et que les restrictions de la clé autorisent ce site.",
+        ZERO_RESULTS: "Aucun itinéraire routier trouvé entre ces points. Essaie de placer les points sur des routes accessibles en voiture.",
+        NOT_FOUND: "Au moins un point n’a pas été reconnu. Déplace ou replace le départ, l’arrivée ou une balise.",
+        WAYPOINTS_EXCEEDED: "Trop de balises pour une seule demande.",
+        MAX_WAYPOINTS_EXCEEDED: "Trop de balises pour une seule demande. Réduis leur nombre.",
+        OVER_QUERY_LIMIT: "Limite de requêtes Google Maps atteinte. Attends un peu avant de réessayer.",
+        INVALID_REQUEST: "La demande d’itinéraire est invalide. Vérifie le départ, l’arrivée et les balises.",
+        UNKNOWN_ERROR: "Erreur temporaire du service d’itinéraires. Réessaie dans quelques instants."
+      };
+      const detail = messages[st] || "Le service d’itinéraires a renvoyé une erreur.";
+      say(detail + " (code : " + st + ")", true);
+      console.warn("AC Track Mapper — DirectionsService:", st);
+      return;
+    }
     path = [];
     res.routes[0].legs.forEach(l => l.steps.forEach(s => s.path.forEach(p => path.push(p))));
     if (poly) poly.setMap(null);
