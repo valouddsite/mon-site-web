@@ -115,6 +115,61 @@ class Obj:
             self.lines.append('f %d/%d %d/%d %d/%d %d/%d' % (f, f, e, e, c, c, a, a))  # double face
         self.base += n * 2
 
+# ------------------------------------------------------------------ terrain autour de la piste
+def add_surrounding_terrain(obj, pts, width, grass, margin=1000.0, cells=100):
+    """Ajoute un terrain maillé continu autour de toute la piste, avec relief doux."""
+    if len(pts) < 2:
+        return
+    min_x = min(p[0] for p in pts) - margin
+    max_x = max(p[0] for p in pts) + margin
+    min_z = min(p[2] for p in pts) - margin
+    max_z = max(p[2] for p in pts) + margin
+    span_x, span_z = max_x - min_x, max_z - min_z
+    nx = max(32, min(cells, int(math.ceil(span_x / 24.0))))
+    nz = max(32, min(cells, int(math.ceil(span_z / 24.0))))
+    # Réduit le nombre de points de référence sur les très longues pistes.
+    stride = max(1, len(pts) // 1400)
+    ref = pts[::stride]
+    if ref[-1] is not pts[-1]:
+        ref.append(pts[-1])
+    verts = []
+    road_edge = width / 2 + 1.0 + grass
+    for iz in range(nz + 1):
+        z = min_z + span_z * iz / nz
+        for ix in range(nx + 1):
+            x = min_x + span_x * ix / nx
+            best_d2, nearest = float('inf'), ref[0]
+            for p in ref:
+                d2 = (p[0] - x) ** 2 + (p[2] - z) ** 2
+                if d2 < best_d2:
+                    best_d2, nearest = d2, p
+            distance = math.sqrt(best_d2)
+            # Le terrain reste légèrement sous la chaussée et s'abaisse doucement
+            # en s'éloignant, afin d'éviter les intersections visibles avec la route.
+            fade = max(0.0, min(1.0, (distance - road_edge) / 45.0))
+            wave = (math.sin(x * 0.018) * math.cos(z * 0.014) * 1.1
+                    + math.sin((x + z) * 0.008) * 1.4) * fade
+            y = nearest[1] - 0.35 - abs(wave) - max(0.0, distance - road_edge) * 0.003
+            verts.append((x, y, z))
+    obj.lines.append('o 1TERRAIN')
+    for x, y, z in verts:
+        obj.lines.append('v %.3f %.3f %.3f' % (x, y, z))
+    for iz in range(nz + 1):
+        for ix in range(nx + 1):
+            x = min_x + span_x * ix / nx
+            z = min_z + span_z * iz / nz
+            obj.lines.append('vt %.4f %.4f' % (x / 30.0, z / 30.0))
+    base = obj.base + 1
+    row = nx + 1
+    for iz in range(nz):
+        for ix in range(nx):
+            a = base + iz * row + ix
+            b, c, d = a + 1, a + row + 1, a + row
+            obj.lines.append('f %d/%d %d/%d %d/%d' % (a, a, d, d, c, c))
+            obj.lines.append('f %d/%d %d/%d %d/%d' % (a, a, c, c, b, b))
+    obj.base += len(verts)
+
+
 # ------------------------------------------------------------------ marqueurs AC
 def markers(pts, tg, dist, w, grid, pits, closed):
     total, line = dist[-1], 8 * grid + 10
@@ -182,7 +237,7 @@ M = json.load(open(os.path.join(here, 'markers.json')))['markers']
 bpy.ops.wm.read_factory_settings(use_empty=True)
 bpy.ops.wm.obj_import(filepath=os.path.join(here, name + '.obj'), forward_axis='NEGATIVE_Z', up_axis='Y')
 # --- matériaux : chaque objet reçoit sa texture (PNG à côté du .fbx, dans le dossier de la piste)
-TEX = [('1ROAD', 'road'), ('1KERB', 'kerb'), ('1GRASS', 'grass'), ('1WALL', 'wall'), ('BUILDING_WALLS', 'building_wall'),
+TEX = [('1ROAD', 'road'), ('1KERB', 'kerb'), ('1GRASS', 'grass'), ('1TERRAIN', 'grass'), ('1WALL', 'wall'), ('BUILDING_WALLS', 'building_wall'),
        ('BUILDING_ROOFS', 'building_roof'), ('TREE_LEAVES', 'tree_leaves'), ('TREE_TRUNKS', 'tree_trunk')]
 root = os.path.abspath(os.path.join(here, '..'))
 mats = {}
@@ -248,6 +303,7 @@ def build_track(ll, name='ma_piste', out='build', width=9, step=3, smooth_passes
     if walls:
         o.wall('1WALL_L', pts, tg, dist, -(w / 2 + k + g), 1.2, closed)
         o.wall('1WALL_R', pts, tg, dist, (w / 2 + k + g), 1.2, closed)
+    add_surrounding_terrain(o, pts, w, g)
     try:
         import ac_textures
         textures = ac_textures.copy_to(root)
