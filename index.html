@@ -920,7 +920,7 @@ function download(name, text, type){
 
 document.querySelectorAll('[data-fmt]').forEach(b => b.onclick = async () => {
   if (path.length < 2) return say('Trace d\'abord un parcours complet.', true);
-  const step = Math.max(1, +$('step').value || 5), width = Math.max(2, +$('width').value || 9);
+  const step = Math.max(0.25, +$('step').value || 0.5), width = Math.max(2, +$('width').value || 9);
   const wantEle = $('elev').checked;
   const pts = resample(step);
   if (pts.length > 20000) return say('Trop de points (' + pts.length + '). Augmente l\'espacement.', true);
@@ -1116,7 +1116,7 @@ function saveBlob(blob, filename){
 $('pack').onclick = async () => {
   if (path.length < 2) return say('Trace d\'abord un parcours complet.', true);
   const name = ($('tname').value || 'ma_piste').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'ma_piste';
-  const o = { w: Math.max(2, +$('width').value || 9), step: Math.max(1, +$('step').value || 3), kerb: 1,
+  const o = { w: Math.max(2, +$('width').value || 9), step: Math.max(0.25, +$('step').value || 0.5), kerb: 1,
     grass: Math.max(0, +$('grass').value || 15), walls: $('walls').checked, grid: Math.max(1, +$('grid').value || 4),
     pits: Math.max(0, +$('pits').value || 0), smooth: 5, city: $('city').value, country: $('country').value };
   const pts = resample(o.step);
