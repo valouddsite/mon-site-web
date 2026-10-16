@@ -475,6 +475,57 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   return { buildings, trees, woods };
 }
 
+function addFallbackDecor(THREE, scene, pts, roadWidth) {
+  // Décor procédural de secours : il reste visible même si l'API OSM est bloquée.
+  // Il est illustratif et ne prétend pas représenter les bâtiments réels du lieu.
+  const treeTrunk = new THREE.CylinderGeometry(.13,.2,1.8,5);
+  const treeCrown = new THREE.ConeGeometry(1.05,2.8,6);
+  const trunkMat = new THREE.MeshStandardMaterial({color:'#60452f', roughness:1});
+  const leafMats = [
+    new THREE.MeshStandardMaterial({color:'#2f6b36', roughness:1}),
+    new THREE.MeshStandardMaterial({color:'#477f3b', roughness:1}),
+    new THREE.MeshStandardMaterial({color:'#28582f', roughness:1})
+  ];
+  const buildingMats = [
+    new THREE.MeshStandardMaterial({color:'#aaa69d', roughness:1}),
+    new THREE.MeshStandardMaterial({color:'#c0b8a8', roughness:1}),
+    new THREE.MeshStandardMaterial({color:'#8e969b', roughness:1})
+  ];
+  const buildingGeo = new THREE.BoxGeometry(1,1,1);
+  let trees=0, buildings=0, lastTreeD=-Infinity, lastBuildingD=-Infinity;
+  for(let i=1;i<pts.length-1;i++){
+    const p=pts[i];
+    if(!Number.isFinite(p.d)) continue;
+    const a=pts[i-1], b=pts[i+1];
+    let dx=b.x-a.x,dz=b.z-a.z,len=Math.hypot(dx,dz)||1; dx/=len; dz/=len;
+    const nx=-dz,nz=dx;
+    if(p.d-lastTreeD>=13){
+      lastTreeD=p.d;
+      for(let side of [-1,1]){
+        const offset=roadWidth/2+8+((i*7+side*3+30)%18);
+        const x=p.x+nx*offset*side, z=p.z+nz*offset*side;
+        const tree=new THREE.Group();
+        const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=.9; tree.add(trunk);
+        const crown=new THREE.Mesh(treeCrown,leafMats[Math.abs(i+side)%leafMats.length]); crown.position.y=2.8; tree.add(crown);
+        tree.position.set(x,p.y||0,z); tree.scale.setScalar(.8+((i*3)%5)*.08); tree.name='arbre décoratif de secours'; scene.add(tree); trees++;
+      }
+    }
+    if(p.d-lastBuildingD>=75){
+      lastBuildingD=p.d;
+      for(let side of [-1,1]){
+        const offset=roadWidth/2+24+((i*11+side*5+100)%24);
+        const h=5+((i*3+side+40)%4)*1.8, w=7+((i*5+side+60)%5)*1.5, depth=8+((i*7+side+80)%5)*1.7;
+        const building=new THREE.Mesh(buildingGeo,buildingMats[Math.abs(i+side)%buildingMats.length]);
+        building.scale.set(w,h,depth);
+        building.position.set(p.x+nx*offset*side,p.y+h/2,p.z+nz*offset*side);
+        building.rotation.y=-Math.atan2(dz,dx); building.castShadow=true; building.receiveShadow=true;
+        building.name='bâtiment décoratif approximatif'; scene.add(building); buildings++;
+      }
+    }
+  }
+  return {trees,buildings};
+}
+
 /* ---------- Aperçu 3D interactif ---------- */
 let threeState = null;
 $('show3d').onclick = open3D;
@@ -559,7 +610,8 @@ async function open3D(){
       decorStatus = decor.buildings + ' bâtiments, ' + decor.trees + ' arbres, ' + decor.woods + ' zones boisées.';
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
-      decorStatus = 'Décor OSM indisponible : ' + String(decorError && decorError.message || 'erreur réseau').slice(0, 90) + '. Réessaie dans quelques instants.';
+      const fallback = addFallbackDecor(THREE, scene, pts, width);
+      decorStatus = 'Décor simplifié affiché (' + fallback.buildings + ' bâtiments et ' + fallback.trees + ' arbres approximatifs) : données OSM indisponibles.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
