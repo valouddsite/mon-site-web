@@ -68,22 +68,40 @@ def rings(el):
 
 # ------------------------------------------------------------------ outils géométriques
 class RouteIndex:
-    """Distance au tracé et altitude du point de route le plus proche (grille de 25 m)."""
+    """Distance au tracé et altitude interpolée sur le segment le plus proche."""
     def __init__(self, pts, cell=25.0):
         self.c, self.pts, self.g = cell, pts, {}
-        for p in pts: self.g.setdefault((int(p[0] // cell), int(p[2] // cell)), []).append(p)
+        for n, p in enumerate(pts):
+            self.g.setdefault((int(p[0] // cell), int(p[2] // cell)), []).append((n, p))
     def nearest(self, x, z, maxr=700.0):
         cx, cz, best, k = int(x // self.c), int(z // self.c), (1e18, None), 0
         while k * self.c <= maxr:
             for i in range(cx - k, cx + k + 1):
                 for j in range(cz - k, cz + k + 1):
                     if max(abs(i - cx), abs(j - cz)) != k: continue
-                    for p in self.g.get((i, j), ()):
+                    for n, p in self.g.get((i, j), ()):
                         d = math.hypot(p[0] - x, p[2] - z)
-                        if d < best[0]: best = (d, p)
+                        if d < best[0]: best = (d, n)
             if best[1] is not None and best[0] <= k * self.c: break
             k += 1
-        return (best[0], best[1][1]) if best[1] else (1e18, self.pts[0][1])
+        if best[1] is None:
+            return 1e18, self.pts[0][1]
+        # Le sommet le plus proche sert à repérer les deux segments voisins.
+        # La hauteur est ensuite interpolée sur le point projeté du segment,
+        # au lieu de reprendre brutalement l'altitude d'un sommet.
+        n = best[1]
+        best_seg = (1e18, self.pts[n][1])
+        for a in (n - 1, n):
+            if a < 0 or a + 1 >= len(self.pts): continue
+            p, q = self.pts[a], self.pts[a + 1]
+            dx, dz = q[0] - p[0], q[2] - p[2]
+            den = dx * dx + dz * dz
+            t = max(0.0, min(1.0, ((x - p[0]) * dx + (z - p[2]) * dz) / den)) if den else 0.0
+            px, pz = p[0] + t * dx, p[2] + t * dz
+            d = math.hypot(px - x, pz - z)
+            if d < best_seg[0]:
+                best_seg = (d, p[1] + t * (q[1] - p[1]))
+        return best_seg
 
 def cross2d(a, b, c): return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
 def area2(poly): return sum(poly[i][0] * poly[(i + 1) % len(poly)][1] - poly[(i + 1) % len(poly)][0] * poly[i][1] for i in range(len(poly)))
