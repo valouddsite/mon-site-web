@@ -224,7 +224,7 @@ def detect_blender(explicit=None):
     return next((c for c in cands if c and os.path.isfile(c)), None)
 
 # ------------------------------------------------------------------ construction (utilisée par la CLI et par le serveur)
-def build_track(ll, name='ma_piste', out='build', width=9, step=3, smooth_passes=4, grass=15, kerb=1.0,
+def build_track(ll, name='ma_piste', out='build', width=9, step=3, smooth_passes=5, grass=15, kerb=1.0,
                 walls=False, grid=4, pits=4, city='', country='', blender=None, scenery=None):
     """ll = liste de (lng, lat, altitude). scenery = dict d'options du décor OSM (ou None). Retourne un dict de résultats."""
     if len(ll) < 2: raise ValueError('Tracé vide.')
@@ -289,7 +289,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('input'); ap.add_argument('--name', default='ma_piste'); ap.add_argument('--out', default='build')
     ap.add_argument('--width', type=float, default=9); ap.add_argument('--step', type=float, default=3)
-    ap.add_argument('--smooth', type=int, default=4, help='passes de lissage du tracé')
+    ap.add_argument('--smooth', type=int, default=5, help='passes de lissage du tracé')
     ap.add_argument('--grass', type=float, default=15); ap.add_argument('--kerb', type=float, default=1.0)
     ap.add_argument('--walls', action='store_true'); ap.add_argument('--grid', type=int, default=4)
     ap.add_argument('--pits', type=int, default=4); ap.add_argument('--city', default=''); ap.add_argument('--country', default='')
