@@ -557,24 +557,34 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     'https://overpass.kumi.systems/api/interpreter',
     'https://overpass.private.coffee/api/interpreter'
   ];
-  async function fetchOSM(query) {
+  async function fetchOSM(query, requireBuildings = false) {
     let lastError = null;
-    for (const endpoint of endpoints) {
-      try {
-        const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
-          method: 'GET', signal: AbortSignal.timeout(18000), cache: 'no-store'
-        });
-        if (!response.ok) throw new Error('HTTP ' + response.status);
-        const result = await response.json();
-        if (result && Array.isArray(result.elements)) return result;
-        throw new Error('Réponse OSM invalide');
-      } catch (err) { lastError = err; }
+    // Les serveurs Overpass peuvent répondre temporairement avec une erreur ou
+    // une réponse vide. On essaie plusieurs miroirs avant d'abandonner le décor.
+    const start = Math.floor(Date.now() / 1000) % endpoints.length;
+    const ordered = endpoints.slice(start).concat(endpoints.slice(0, start));
+    for (let round = 0; round < 2; round++) {
+      for (const endpoint of ordered) {
+        try {
+          const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
+            method: 'GET', signal: AbortSignal.timeout(15000), cache: 'no-store'
+          });
+          if (!response.ok) throw new Error('HTTP ' + response.status);
+          const result = await response.json();
+          if (!result || !Array.isArray(result.elements)) throw new Error('Réponse OSM invalide');
+          if (requireBuildings && result.elements.length === 0) {
+            lastError = new Error('réponse vide du serveur Overpass');
+            continue;
+          }
+          return result;
+        } catch (err) { lastError = err; }
+      }
     }
     throw new Error(String(lastError && lastError.message || 'erreur réseau'));
   }
   let buildingData;
   try {
-    buildingData = await fetchOSM(buildingQuery);
+    buildingData = await fetchOSM(buildingQuery, true);
   } catch (err) {
     throw new Error('Impossible de charger les empreintes de bâtiments OpenStreetMap : ' + String(err.message || err));
   }
