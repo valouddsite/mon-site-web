@@ -54,9 +54,25 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
 #load3d .percent{display:block;text-align:right;color:var(--yel);font-size:12px;margin-top:7px;font-variant-numeric:tabular-nums}
 #show3d{width:100%;margin-top:8px}
 @media (max-width:760px){
+ html,body{height:100%;height:100dvh;overflow:hidden}
  body{flex-direction:column-reverse}
- aside{width:100%;height:46%;border-right:0;border-top:4px solid var(--yel)}
- #map{height:54%;flex:none;width:100%}
+ aside{width:100%;height:48%;height:48dvh;min-height:230px;flex:0 0 auto;gap:10px;padding:12px;border-right:0;border-top:3px solid var(--yel);padding-bottom:max(12px,env(safe-area-inset-bottom))}
+ #map{height:52%;height:52dvh;min-height:180px;flex:1 1 auto;width:100%}
+ h1{font-size:18px}
+ section{padding-top:10px}
+ button{min-height:42px;padding:9px 10px;touch-action:manipulation}
+ input[type=text],input[type=password],input[type=number]{min-height:42px;font-size:16px}
+ input[type=number]{width:82px}
+ #preview3d header{padding:calc(8px + env(safe-area-inset-top)) 10px 8px;gap:7px}
+ #preview3d header button{min-height:40px;padding:7px 10px}
+ #preview3d .help{padding:8px 10px calc(8px + env(safe-area-inset-bottom));font-size:11px}
+ #load3d{inset:calc(54px + env(safe-area-inset-top)) 0 calc(34px + env(safe-area-inset-bottom))}
+ #load3d .load-card{padding:18px}
+}
+@media (max-width:760px) and (orientation:landscape){
+ aside{height:38%;height:38dvh;min-height:150px;padding:8px;gap:6px}
+ #map{height:62%;height:62dvh}
+ h1 span{display:none}
 }
 </style>
 <script type="importmap">
@@ -554,7 +570,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   ];
   // Exclut les arbres qui tombent sur la chaussée : les données OSM peuvent
   // contenir des arbres plantés sur le bord immédiat ou au milieu de routes.
-  const minTreeDistance = Math.max(roadWidth / 2 + 2.5, 6);
+  const minTreeDistance = Math.max(roadWidth / 2 + 8, 12);
   const treeNodes = (data.elements || []).filter(el => {
     if (el.type !== 'node' || !el.tags || el.tags.natural !== 'tree' ||
         !Number.isFinite(el.lat) || !Number.isFinite(el.lon)) return false;
@@ -716,10 +732,11 @@ async function open3D(){
     renderer.domElement.id = 'scene3d';
     if (oldCanvas && oldCanvas.parentNode) oldCanvas.replaceWith(renderer.domElement);
     else host.insertBefore(renderer.domElement, host.querySelector('.help'));
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    renderer.setSize(host.clientWidth, Math.max(300, host.clientHeight - 100), false);
-    renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    const isMobile = window.matchMedia('(max-width: 760px)').matches;
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, isMobile ? 1.25 : 1.75));
+    renderer.setSize(host.clientWidth, Math.max(220, host.clientHeight - (isMobile ? 105 : 100)), false);
+    renderer.shadowMap.enabled = !isMobile;
+    if (!isMobile) renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color('#b8d0df');
@@ -771,9 +788,9 @@ async function open3D(){
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
-      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Placement des arbres de remplacement.');
-      const fallback = addFallbackDecor(THREE, scene, pts, width);
-      decorStatus = 'OpenStreetMap indisponible : ' + fallback.trees + ' arbres de remplissage affichés. Les bâtiments réels nécessitent le chargement des données OSM.';
+      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments simples et désactivation des arbres de secours pour garder la chaussée dégagée.');
+      const fallbackBuildings = addFallbackBuildings(THREE, scene, pts, width);
+      decorStatus = 'OpenStreetMap indisponible : ' + fallbackBuildings + ' bâtiments simples affichés ; arbres de secours désactivés pour éviter ceux sur la route.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
@@ -782,6 +799,14 @@ async function open3D(){
     if (threeState.raf) cancelAnimationFrame(threeState.raf);
     const animate=()=>{if(!threeState||threeState.renderer!==renderer)return;threeState.raf=requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);};
     animate();
+    if (threeState.resizeHandler) window.removeEventListener('resize', threeState.resizeHandler);
+    threeState.resizeHandler = () => {
+      if (!threeState || threeState.renderer !== renderer) return;
+      const w = Math.max(1, host.clientWidth), h = Math.max(220, host.clientHeight - (window.matchMedia('(max-width: 760px)').matches ? 105 : 100));
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h; camera.updateProjectionMatrix();
+    };
+    window.addEventListener('resize', threeState.resizeHandler, {passive:true});
     set3DLoading(100, 'Rendu 3D terminé', 'La route et le décor sont prêts.');
     say('Aperçu 3D prêt. Route lissée, sans brouillard. ' + decorStatus);
     setTimeout(hide3DLoading, 350);
