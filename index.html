@@ -51,6 +51,14 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
  #map{height:54%;flex:none;width:100%}
 }
 </style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+  }
+}
+</script>
 </head>
 <body>
 <aside>
@@ -358,8 +366,8 @@ async function open3D(){
   $('preview3d').classList.add('show');
   say('Préparation du rendu 3D…');
   try {
-    const THREE = await import('https://esm.sh/three@0.164.1');
-    const { OrbitControls } = await import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js');
+    const THREE = await import('three');
+    const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
     const pts = resample(Math.max(2, +$('step').value || 3));
     if ($('elev').checked && elevSvc) {
       try { await addElevation(pts); } catch(e) { console.warn('Altitude indisponible pour l’aperçu 3D', e); }
