@@ -38,6 +38,13 @@ ol{margin:0 0 10px;padding-left:18px;color:var(--mut);font-size:13px}
 ol li{margin:3px 0}
 code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
 .hint{font-size:12px;color:var(--mut)}
+#preview3d{display:none;position:fixed;inset:0;z-index:1000;background:#101214}
+#preview3d.show{display:flex;flex-direction:column}
+#preview3d header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#25282c;border-bottom:1px solid #3a3e44}
+#preview3d header strong{flex:1}
+#preview3d canvas{display:block;flex:1;min-height:0;width:100%}
+#preview3d .help{padding:8px 16px;background:#25282c;color:#9aa3ab;font-size:12px}
+#show3d{width:100%;margin-top:8px}
 @media (max-width:760px){
  body{flex-direction:column-reverse}
  aside{width:100%;height:46%;border-right:0;border-top:4px solid var(--yel)}
@@ -90,6 +97,12 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
   </section>
 
   <section>
+    <h2>Aperçu 3D</h2>
+    <p>Visualise la route en volume avant de générer le pack.</p>
+    <button id="show3d" type="button">Ouvrir le rendu 3D</button>
+  </section>
+
+  <section>
     <h2>4. Générer la piste Assetto Corsa</h2>
     <label><span>Nom de la piste</span><input type="text" id="tname" value="ma_piste" style="width:160px"></label>
     <div class="row" style="margin:6px 0"><input id="city" type="text" placeholder="Ville"><input id="country" type="text" placeholder="Pays"></div>
@@ -130,6 +143,11 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
     </ol>
   </section>
 </aside>
+<div id="preview3d" aria-label="Aperçu 3D de la piste">
+  <header><strong>Rendu 3D du tracé</strong><button id="reset3d" type="button">Recentrer</button><button id="close3d" type="button">Fermer ✕</button></header>
+  <canvas id="scene3d"></canvas>
+  <div class="help">Glisse pour tourner · molette/pincement pour zoomer · clic droit pour déplacer la vue. Le rendu est une prévisualisation, pas une simulation photoréaliste du terrain.</div>
+</div>
 <div id="map"></div>
 
 <script>
@@ -326,6 +344,94 @@ async function addElevation(pts){
     const c = pts.map(p => p.y);
     for (let i = 1; i < pts.length - 1; i++) pts[i].y = (c[i - 1] + c[i] * 2 + c[i + 1]) / 4;
   }
+}
+
+/* ---------- Aperçu 3D interactif ---------- */
+let threeState = null;
+$('show3d').onclick = open3D;
+$('close3d').onclick = () => $('preview3d').classList.remove('show');
+$('reset3d').onclick = () => { if (threeState) fit3DCamera(threeState); };
+window.addEventListener('keydown', e => { if (e.key === 'Escape') $('preview3d').classList.remove('show'); });
+
+async function open3D(){
+  if (path.length < 2) return say('Trace d’abord un parcours complet avant le rendu 3D.', true);
+  $('preview3d').classList.add('show');
+  say('Préparation du rendu 3D…');
+  try {
+    const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js');
+    const { OrbitControls } = await import('https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/controls/OrbitControls.js');
+    const pts = resample(Math.max(2, +$('step').value || 3));
+    if ($('elev').checked && elevSvc) {
+      try { await addElevation(pts); } catch(e) { console.warn('Altitude indisponible pour l’aperçu 3D', e); }
+    }
+    if (threeState) {
+      threeState.controls.dispose();
+      threeState.renderer.dispose();
+      threeState.renderer.domElement.remove();
+      threeState = null;
+    }
+    const host = $('preview3d'), canvas = $('scene3d');
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias:true, powerPreference:'high-performance' });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(host.clientWidth, Math.max(300, host.clientHeight - 100), false);
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color('#b8d0df');
+    scene.fog = new THREE.Fog('#b8d0df', 1500, 6000);
+    scene.add(new THREE.HemisphereLight(0xeaf4ff, 0x53634a, 2.0));
+    const sun = new THREE.DirectionalLight(0xffffff, 2.4);
+    sun.position.set(300, 500, 250); sun.castShadow = true; scene.add(sun);
+    const group = new THREE.Group(); scene.add(group);
+    const bounds = pts.reduce((b,p)=>({minX:Math.min(b.minX,p.x),maxX:Math.max(b.maxX,p.x),minZ:Math.min(b.minZ,p.z),maxZ:Math.max(b.maxZ,p.z),minY:Math.min(b.minY,p.y),maxY:Math.max(b.maxY,p.y)}),{minX:Infinity,maxX:-Infinity,minZ:Infinity,maxZ:-Infinity,minY:Infinity,maxY:-Infinity});
+    const cx=(bounds.minX+bounds.maxX)/2, cz=(bounds.minZ+bounds.maxZ)/2;
+    pts.forEach(p=>{p.x-=cx;p.z-=cz;p.y-=bounds.minY;});
+    const width=Math.max(2,+$('width').value||9), shoulder=Math.max(0,+$('grass').value||15);
+    const makeRibbon=(leftOffset,rightOffset,yOffset,material,name)=>{
+      const verts=[], indices=[];
+      for(let i=0;i<pts.length;i++){
+        const a=pts[Math.max(0,i-1)], b=pts[Math.min(pts.length-1,i+1)];
+        let dx=b.x-a.x,dz=b.z-a.z,l=Math.hypot(dx,dz)||1; dx/=l; dz/=l;
+        const nx=-dz,nz=dx,p=pts[i];
+        verts.push(p.x+nx*leftOffset,p.y+yOffset,p.z+nz*leftOffset);
+        verts.push(p.x+nx*rightOffset,p.y+yOffset,p.z+nz*rightOffset);
+      }
+      for(let i=0;i<pts.length-1;i++){const a=i*2;indices.push(a,a+2,a+3,a,a+3,a+1);}
+      const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
+      const mesh=new THREE.Mesh(geo,material);mesh.name=name;mesh.receiveShadow=true;group.add(mesh);
+    };
+    makeRibbon(width/2+shoulder,-width/2-shoulder,-0.12,new THREE.MeshStandardMaterial({color:'#4c7841',roughness:1,side:THREE.DoubleSide}),'herbe');
+    makeRibbon(width/2,-width/2,0.08,new THREE.MeshStandardMaterial({color:'#34383d',roughness:.95,side:THREE.DoubleSide}),'route');
+    makeRibbon(width/2+0.35,width/2,0.11,new THREE.MeshStandardMaterial({color:'#e9e3d1',roughness:1,side:THREE.DoubleSide}),'bordure droite');
+    makeRibbon(-width/2,-width/2-0.35,0.11,new THREE.MeshStandardMaterial({color:'#e9e3d1',roughness:1,side:THREE.DoubleSide}),'bordure gauche');
+    // Marquage central discret pour rendre le tracé plus lisible en vue éloignée.
+    const linePts=[];
+    for(let i=0;i<pts.length;i+=Math.max(1,Math.floor(pts.length/500))) linePts.push(new THREE.Vector3(pts[i].x,pts[i].y+0.13,pts[i].z));
+    const lineGeo=new THREE.BufferGeometry().setFromPoints(linePts);
+    group.add(new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#f2c230',transparent:true,opacity:.8})));
+    const groundSize=Math.max(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ)+shoulder*8+250;
+    const ground=new THREE.Mesh(new THREE.PlaneGeometry(groundSize,groundSize),new THREE.MeshStandardMaterial({color:'#637d54',roughness:1}));
+    ground.rotation.x=-Math.PI/2;ground.position.set(0,-.3,0);ground.receiveShadow=true;scene.add(ground);
+    const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
+    const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
+    threeState={THREE,renderer,scene,camera,controls,group,ground,bounds,pts,host};
+    fit3DCamera(threeState);
+    if (threeState.raf) cancelAnimationFrame(threeState.raf);
+    const animate=()=>{if(!threeState||threeState.renderer!==renderer)return;threeState.raf=requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);};
+    animate();
+    say('Aperçu 3D prêt. Tu peux tourner et zoomer sur le tracé.');
+  } catch(e) {
+    console.error('Aperçu 3D indisponible',e);
+    say('Impossible de charger le rendu 3D. Vérifie ta connexion internet et que le navigateur autorise WebGL.',true);
+  }
+}
+function fit3DCamera(s){
+  if(!s)return;
+  const span=Math.max(s.bounds.maxX-s.bounds.minX,s.bounds.maxZ-s.bounds.minZ,100);
+  s.camera.position.set(span*.65,span*.65,span*.8);
+  s.camera.near=.1;s.camera.far=Math.max(20000,span*8);s.camera.updateProjectionMatrix();
+  s.controls.target.set(0,0,0);s.controls.update();
 }
 
 /* ---------- Formats d'export ---------- */
