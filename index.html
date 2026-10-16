@@ -394,8 +394,18 @@ function smoothPreviewPoints(source, passes = 2) {
 }
 
 async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz) {
-  const south = Math.min(...pts.map(p => p.lat)), north = Math.max(...pts.map(p => p.lat));
-  const west = Math.min(...pts.map(p => p.lng)), east = Math.max(...pts.map(p => p.lng));
+  // Évite RangeError sur Math.min/max(...tableau) lorsque le tracé contient beaucoup de points.
+  let south = Infinity, north = -Infinity, west = Infinity, east = -Infinity;
+  for (const p of pts) {
+    if (!Number.isFinite(p.lat) || !Number.isFinite(p.lng)) continue;
+    if (p.lat < south) south = p.lat;
+    if (p.lat > north) north = p.lat;
+    if (p.lng < west) west = p.lng;
+    if (p.lng > east) east = p.lng;
+  }
+  if (![south, north, west, east].every(Number.isFinite)) {
+    throw new Error('Le tracé ne contient pas de coordonnées GPS valides pour charger les bâtiments.');
+  }
   // Évite les requêtes démesurées pour les itinéraires très longs.
   const padLat = Math.min(.025, Math.max(.0015, (+$('margin').value || 200) / 111000));
   const midLat = (south + north) / 2;
