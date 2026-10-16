@@ -400,20 +400,25 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     'way["natural"~"wood|scrub"](' + s + ',' + w + ',' + n + ',' + e + ');' +
     ');out geom 900;';
   let data = null, lastError = null;
-  for (const endpoint of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+  const endpoints = [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter'
+  ];
+  // GET évite certains blocages CORS/réseau qui affectent les POST cross-origin.
+  for (const endpoint of endpoints) {
     try {
-      const response = await fetch(endpoint, {
-        method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        body: 'data=' + encodeURIComponent(query), signal: AbortSignal.timeout(15000)
+      const response = await fetch(endpoint + '?data=' + encodeURIComponent(query), {
+        method: 'GET', signal: AbortSignal.timeout(12000), cache: 'no-store'
       });
       if (!response.ok) throw new Error('HTTP ' + response.status);
       data = await response.json();
       if (data && Array.isArray(data.elements)) break;
       throw new Error('Réponse OSM invalide');
-    } catch (err) { lastError = err; }
+    } catch (err) { lastError = err; data = null; }
   }
   if (!data || !Array.isArray(data.elements)) {
-    throw new Error('API OpenStreetMap inaccessible : ' + String(lastError && lastError.message || 'erreur réseau'));
+    throw new Error('API OpenStreetMap inaccessible : ' + String(lastError && lastError.message || 'erreur réseau') + '. Le navigateur ou le réseau bloque peut-être les requêtes externes.');
   }
   const project = g => ({
     x: (g.lon * Math.PI / 180 - originLng) * cosLat * R - cx,
