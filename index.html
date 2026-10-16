@@ -445,8 +445,15 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
   const roofMat = new THREE.MeshStandardMaterial({ color:'#76685a', roughness:1, side:THREE.DoubleSide });
   const forestMat = new THREE.MeshStandardMaterial({ color:'#416d37', roughness:1, side:THREE.DoubleSide });
   const groundHeightAt = (x,z) => {
-    let best=Infinity, y=0;
-    for(const p of pts){ const d=(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z); if(d<best){best=d;y=p.y||0;} }
+    let best=Infinity, y=pts[0]?.y||0;
+    // Projette le décor sur le segment de route le plus proche et interpole l'altitude.
+    for(let i=0;i<pts.length-1;i++){
+      const a=pts[i], b=pts[i+1], dx=b.x-a.x, dz=b.z-a.z;
+      const den=dx*dx+dz*dz;
+      const t=den?Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/den)):0;
+      const px=a.x+t*dx, pz=a.z+t*dz, d=(px-x)*(px-x)+(pz-z)*(pz-z);
+      if(d<best){best=d;y=(a.y||0)+t*((b.y||0)-(a.y||0));}
+    }
     return y;
   };
   let buildings = 0, trees = 0, woods = 0;
@@ -520,6 +527,16 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
     new THREE.MeshStandardMaterial({color:'#8e969b', roughness:1})
   ];
   const buildingGeo = new THREE.BoxGeometry(1,1,1);
+  const groundHeightAt = (x,z) => {
+    let best=Infinity, y=pts[0]?.y||0;
+    for(let j=0;j<pts.length-1;j++){
+      const a=pts[j], b=pts[j+1], dx=b.x-a.x, dz=b.z-a.z, den=dx*dx+dz*dz;
+      const t=den?Math.max(0,Math.min(1,((x-a.x)*dx+(z-a.z)*dz)/den)):0;
+      const px=a.x+t*dx, pz=a.z+t*dz, d=(px-x)*(px-x)+(pz-z)*(pz-z);
+      if(d<best){best=d;y=(a.y||0)+t*((b.y||0)-(a.y||0));}
+    }
+    return y;
+  };
   let trees=0, buildings=0, lastTreeD=-Infinity, lastBuildingD=-Infinity;
   for(let i=1;i<pts.length-1;i++){
     const p=pts[i];
@@ -535,7 +552,7 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
         const tree=new THREE.Group();
         const trunk=new THREE.Mesh(treeTrunk,trunkMat); trunk.position.y=.9; tree.add(trunk);
         const crown=new THREE.Mesh(treeCrown,leafMats[Math.abs(i+side)%leafMats.length]); crown.position.y=2.8; tree.add(crown);
-        tree.position.set(x,p.y||0,z); tree.scale.setScalar(.8+((i*3)%5)*.08); tree.name='arbre décoratif de secours'; scene.add(tree); trees++;
+        tree.position.set(x,groundHeightAt(x,z),z); tree.scale.setScalar(.8+((i*3)%5)*.08); tree.name='arbre décoratif de secours'; scene.add(tree); trees++;
       }
     }
     if(p.d-lastBuildingD>=75){
@@ -545,7 +562,8 @@ function addFallbackDecor(THREE, scene, pts, roadWidth) {
         const h=5+((i*3+side+40)%4)*1.8, w=7+((i*5+side+60)%5)*1.5, depth=8+((i*7+side+80)%5)*1.7;
         const building=new THREE.Mesh(buildingGeo,buildingMats[Math.abs(i+side)%buildingMats.length]);
         building.scale.set(w,h,depth);
-        building.position.set(p.x+nx*offset*side,p.y+h/2,p.z+nz*offset*side);
+        const bx=p.x+nx*offset*side, bz=p.z+nz*offset*side;
+        building.position.set(bx,groundHeightAt(bx,bz)+h/2,bz);
         building.rotation.y=-Math.atan2(dz,dx); building.castShadow=true; building.receiveShadow=true;
         building.name='bâtiment décoratif approximatif'; scene.add(building); buildings++;
       }
