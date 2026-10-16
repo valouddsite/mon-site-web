@@ -411,9 +411,9 @@ async function addElevation(pts){
   // Référence relative au départ, tout en conservant le profil vertical mesuré.
   const base = pts[0].y;
   const raw = pts.map(p => p.y - base);
-  // Lissage spatial sur 8 m de chaque côté : rend les transitions d'altitude
-  // plus progressives sans dépendre du pas d'échantillonnage.
-  const radius = 8;
+  // Lissage spatial sur 18 m de chaque côté : atténue les petites marches d’altitude
+  // de l’API, tout en conservant les grandes variations du relief.
+  const radius = 18;
   const filtered = raw.map((value, i) => {
     let sum = 0, weights = 0;
     for (let j = i; j >= 0; j--) {
@@ -457,6 +457,62 @@ function smoothPreviewPoints(source, passes = 2) {
   let d = 0;
   pts.forEach((p, i) => { if (i) d += Math.hypot(p.x - pts[i-1].x, p.z - pts[i-1].z); p.d = d; });
   return pts;
+}
+
+function createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, roadWidth) {
+  // Terrain maillé autour du circuit : suit le profil de la route près des accotements,
+  // puis s'en éloigne progressivement avec de faibles ondulations naturelles.
+  if (!pts || pts.length < 2) return null;
+  const margin = Math.max(100, shoulder * 5);
+  const minX = bounds.minX - margin, maxX = bounds.maxX + margin;
+  const minZ = bounds.minZ - margin, maxZ = bounds.maxZ + margin;
+  const spanX = Math.max(1, maxX - minX), spanZ = Math.max(1, maxZ - minZ);
+  const nx = Math.max(32, Math.min(100, Math.ceil(spanX / 12)));
+  const nz = Math.max(32, Math.min(100, Math.ceil(spanZ / 12)));
+  // Sous-échantillonnage pour garder le calcul rapide sur les longues pistes.
+  const stride = Math.max(1, Math.ceil((pts.length - 1) / 900));
+  const route = [];
+  for (let i = 0; i < pts.length - 1; i += stride) route.push(pts[i]);
+  route.push(pts[pts.length - 1]);
+  const verts = [], indices = [];
+  for (let iz = 0; iz <= nz; iz++) {
+    const z = minZ + spanZ * iz / nz;
+    for (let ix = 0; ix <= nx; ix++) {
+      const x = minX + spanX * ix / nx;
+      let best = Infinity, routeY = 0, nearestX = x, nearestZ = z;
+      for (let j = 0; j < route.length - 1; j++) {
+        const a = route[j], b = route[j + 1], dx = b.x - a.x, dz = b.z - a.z;
+        const den = dx * dx + dz * dz;
+        const t = den ? Math.max(0, Math.min(1, ((x-a.x)*dx + (z-a.z)*dz) / den)) : 0;
+        const px = a.x + dx*t, pz = a.z + dz*t;
+        const d2 = (px-x)*(px-x) + (pz-z)*(pz-z);
+        if (d2 < best) {
+          best = d2; nearestX = px; nearestZ = pz;
+          routeY = (a.y || 0) + t*((b.y || 0) - (a.y || 0));
+        }
+      }
+      const distance = Math.sqrt(best);
+      const fade = Math.max(0, Math.min(1, (distance - roadWidth/2 - shoulder) / 45));
+      const wave = (Math.sin(x * 0.018) * Math.cos(z * 0.014) * 1.1 +
+                    Math.sin((x + z) * 0.008) * 1.4) * fade;
+      const edgeBlend = Math.max(0, Math.min(1, distance / 14));
+      const y = routeY - 0.24 + wave * edgeBlend;
+      verts.push(x, y, z);
+      if (ix < nx && iz < nz) {
+        const a = iz*(nx+1)+ix, b=a+1, d=(iz+1)*(nx+1)+ix, e=d+1;
+        indices.push(a,d,b,b,d,e);
+      }
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+  geo.setIndex(indices); geo.computeVertexNormals();
+  const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color:'#637d54', roughness:1, side:THREE.DoubleSide}));
+  mesh.name = 'terrain généré autour de la piste';
+  mesh.userData.renderLayer = 'terrain';
+  mesh.receiveShadow = true;
+  scene.add(mesh);
+  return mesh;
 }
 
 async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, roadWidth) {
@@ -860,9 +916,7 @@ async function open3D(){
     for(let i=0;i<pts.length;i+=Math.max(1,Math.floor(pts.length/500))) linePts.push(new THREE.Vector3(pts[i].x,pts[i].y+0.13,pts[i].z));
     const lineGeo=new THREE.BufferGeometry().setFromPoints(linePts);
     const centerLine = new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#f2c230',transparent:true,opacity:.8})); centerLine.name='marquage route'; centerLine.userData.renderLayer='route'; group.add(centerLine);
-    const groundSize=Math.max(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ)+shoulder*8+250;
-    const ground=new THREE.Mesh(new THREE.PlaneGeometry(groundSize,groundSize),new THREE.MeshStandardMaterial({color:'#637d54',roughness:1}));
-    ground.name='sol de la scène'; ground.userData.renderLayer='terrain'; ground.rotation.x=-Math.PI/2;ground.position.set(0,-.3,0);ground.receiveShadow=true;scene.add(ground);
+    createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, width);
     let decorStatus = 'Décor OSM non chargé.';
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
