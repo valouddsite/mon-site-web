@@ -43,6 +43,11 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
 #preview3d header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:#25282c;border-bottom:1px solid #3a3e44}
 #preview3d header strong{flex:1}
 #preview3d canvas{display:block;flex:1;min-height:0;width:100%}
+#preview3d .render-options{position:absolute;top:68px;left:12px;z-index:2;display:flex;flex-direction:column;gap:7px;padding:11px 13px;background:rgba(25,28,31,.92);border:1px solid #4a5056;border-radius:10px;color:#eef0f2;font-size:13px;box-shadow:0 4px 18px #0004}
+#preview3d .render-options strong{font-size:12px;color:#f2c230;letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px}
+#preview3d .render-options label{display:flex;align-items:center;gap:8px;cursor:pointer}
+#preview3d .render-options input{accent-color:#f2c230;width:16px;height:16px;margin:0}
+@media (max-width:760px){#preview3d .render-options{top:62px;left:7px;padding:8px 10px;gap:6px;font-size:12px}}
 #preview3d .help{padding:8px 16px;background:#25282c;color:#9aa3ab;font-size:12px}
 #load3d{position:absolute;inset:56px 0 34px;z-index:3;display:none;align-items:center;justify-content:center;background:rgba(16,18,20,.88);backdrop-filter:blur(4px)}
 #load3d.show{display:flex}
@@ -178,6 +183,14 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
 <div id="preview3d" aria-label="Aperçu 3D de la piste">
   <header><strong>Rendu 3D du tracé</strong><button id="reset3d" type="button">Recentrer</button><button id="close3d" type="button">Fermer ✕</button></header>
   <canvas id="scene3d"></canvas>
+  <div class="render-options" aria-label="Options d’affichage du rendu 3D">
+    <strong>Afficher dans la scène</strong>
+    <label><input type="checkbox" data-render-layer="route" checked> Route et bordures</label>
+    <label><input type="checkbox" data-render-layer="trees" checked> Arbres</label>
+    <label><input type="checkbox" data-render-layer="buildings" checked> Bâtiments</label>
+    <label><input type="checkbox" data-render-layer="woods" checked> Zones boisées</label>
+    <label><input type="checkbox" data-render-layer="terrain" checked> Sol et accotements</label>
+  </div>
   <div id="load3d" role="status" aria-live="polite"><div class="load-card"><strong id="load3dTitle">Préparation du rendu 3D…</strong><p id="load3dText">Initialisation du moteur graphique.</p><div class="track"><div id="load3dBar" class="bar"></div></div><span id="load3dPercent" class="percent">5 %</span></div></div>
   <div class="help">Glisse pour tourner · molette/pincement pour zoomer · clic droit pour déplacer la vue. Le rendu est une prévisualisation, pas une simulation photoréaliste du terrain.</div>
 </div>
@@ -754,6 +767,23 @@ function hide3DLoading() { $('load3d').classList.remove('show'); }
 $('show3d').onclick = open3D;
 $('close3d').onclick = () => $('preview3d').classList.remove('show');
 $('reset3d').onclick = () => { if (threeState) fit3DCamera(threeState); };
+function applyPreviewLayers(){
+  if(!threeState) return;
+  const enabled = {};
+  document.querySelectorAll('[data-render-layer]').forEach(input => { enabled[input.dataset.renderLayer] = input.checked; });
+  threeState.scene.traverse(obj => {
+    const name = (obj.name || '').toLowerCase();
+    let layer = obj.userData && obj.userData.renderLayer;
+    if (!layer) {
+      if (/^bâtiment osm$/.test(name)) layer = 'buildings';
+      else if (/^arbre de remplissage/.test(name) || /^arbre feuillu osm$/.test(name) || /^conifère osm$/.test(name)) layer = 'trees';
+      else if (name === 'végétation osm') layer = 'woods';
+      else if (name === 'route' || name.startsWith('bordure ') || name === 'marquage route') layer = 'route';
+    }
+    if(layer && Object.prototype.hasOwnProperty.call(enabled,layer)) obj.visible = enabled[layer];
+  });
+}
+document.querySelectorAll('[data-render-layer]').forEach(input => input.addEventListener('change', applyPreviewLayers));
 window.addEventListener('keydown', e => { if (e.key === 'Escape') $('preview3d').classList.remove('show'); });
 
 async function open3D(){
@@ -816,7 +846,7 @@ async function open3D(){
       }
       for(let i=0;i<pts.length-1;i++){const a=i*2;indices.push(a,a+2,a+3,a,a+3,a+1);}
       const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.Float32BufferAttribute(verts,3));geo.setIndex(indices);geo.computeVertexNormals();
-      const mesh=new THREE.Mesh(geo,material);mesh.name=name;mesh.receiveShadow=true;group.add(mesh);
+      const mesh=new THREE.Mesh(geo,material);mesh.name=name;mesh.userData.renderLayer=name==='herbe'?'terrain':'route';mesh.receiveShadow=true;group.add(mesh);
     };
     makeRibbon(width/2+shoulder,-width/2-shoulder,-0.12,new THREE.MeshStandardMaterial({color:'#4c7841',roughness:1,side:THREE.DoubleSide}),'herbe');
     makeRibbon(width/2,-width/2,0.08,new THREE.MeshStandardMaterial({color:'#34383d',roughness:.95,side:THREE.DoubleSide}),'route');
@@ -826,10 +856,10 @@ async function open3D(){
     const linePts=[];
     for(let i=0;i<pts.length;i+=Math.max(1,Math.floor(pts.length/500))) linePts.push(new THREE.Vector3(pts[i].x,pts[i].y+0.13,pts[i].z));
     const lineGeo=new THREE.BufferGeometry().setFromPoints(linePts);
-    group.add(new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#f2c230',transparent:true,opacity:.8})));
+    const centerLine = new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#f2c230',transparent:true,opacity:.8})); centerLine.name='marquage route'; centerLine.userData.renderLayer='route'; group.add(centerLine);
     const groundSize=Math.max(bounds.maxX-bounds.minX,bounds.maxZ-bounds.minZ)+shoulder*8+250;
     const ground=new THREE.Mesh(new THREE.PlaneGeometry(groundSize,groundSize),new THREE.MeshStandardMaterial({color:'#637d54',roughness:1}));
-    ground.rotation.x=-Math.PI/2;ground.position.set(0,-.3,0);ground.receiveShadow=true;scene.add(ground);
+    ground.name='sol de la scène'; ground.userData.renderLayer='terrain'; ground.rotation.x=-Math.PI/2;ground.position.set(0,-.3,0);ground.receiveShadow=true;scene.add(ground);
     let decorStatus = 'Décor OSM non chargé.';
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
@@ -850,6 +880,7 @@ async function open3D(){
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
     threeState={THREE,renderer,scene,camera,controls,group,ground,bounds,pts,host};
+    applyPreviewLayers();
     fit3DCamera(threeState);
     if (threeState.raf) cancelAnimationFrame(threeState.raf);
     const animate=()=>{if(!threeState||threeState.renderer!==renderer)return;threeState.raf=requestAnimationFrame(animate);controls.update();renderer.render(scene,camera);};
