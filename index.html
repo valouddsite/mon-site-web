@@ -784,13 +784,18 @@ async function open3D(){
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
       const decor = await loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx, cz, width);
       if (decor.buildings === 0) decor.buildings = addFallbackBuildings(THREE, scene, pts, width);
+      if (decor.trees === 0) {
+        const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
+        decor.trees = fallbackTrees.trees;
+      }
       decorStatus = decor.buildings + ' bâtiments (données OSM ou secours), ' + decor.trees + ' arbres hors chaussée, ' + decor.woods + ' zones boisées.';
       set3DLoading(88, 'Finition du décor', decorStatus);
     } catch (decorError) {
       console.warn('Décor OpenStreetMap indisponible dans l’aperçu 3D', decorError);
-      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments simples et désactivation des arbres de secours pour garder la chaussée dégagée.');
+      set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments et d’arbres placés sur les côtés de la route.');
       const fallbackBuildings = addFallbackBuildings(THREE, scene, pts, width);
-      decorStatus = 'OpenStreetMap indisponible : ' + fallbackBuildings + ' bâtiments simples affichés ; arbres de secours désactivés pour éviter ceux sur la route.';
+      const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
+      decorStatus = 'OpenStreetMap indisponible : ' + fallbackBuildings + ' bâtiments simples et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
     const controls=new OrbitControls(camera,renderer.domElement);controls.enableDamping=true;controls.dampingFactor=.07;controls.target.set(0,0,0);controls.maxPolarAngle=Math.PI*.49;
