@@ -291,7 +291,13 @@ async function computeRoute(){
       stats();
       return say('Aucun itinéraire routier trouvé. Déplace les points sur des routes accessibles en voiture.', true);
     }
-    path = result.routes[0].path;
+    // Routes.computeRoutes renvoie des LatLngAltitude dont lat/lng peuvent être des nombres,
+    // contrairement aux objets LatLng classiques qui exposent lat() et lng().
+    // Normalise le chemin pour les exports, la géométrie Google Maps et l'aperçu 3D.
+    path = result.routes[0].path.map(p => new google.maps.LatLng(
+      typeof p.lat === 'function' ? p.lat() : p.lat,
+      typeof p.lng === 'function' ? p.lng() : p.lng
+    ));
     if (poly) poly.setMap(null);
     poly = new google.maps.Polyline({ map, path, strokeColor: '#f2c230', strokeOpacity: .95, strokeWeight: 5, clickable: false });
     stats();
