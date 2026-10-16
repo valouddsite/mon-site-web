@@ -596,7 +596,9 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     for (const ring of rings) {
       if (ring.length < 4) continue;
       const coords = ring.map(project);
-      if (Math.hypot(coords[0].x-coords[coords.length-1].x, coords[0].z-coords[coords.length-1].z) > 8) continue;
+      // N’accepte que les empreintes réellement fermées : une fermeture approximative
+      // de plusieurs mètres créerait un faux pan de bâtiment et décalerait sa forme.
+      if (Math.hypot(coords[0].x-coords[coords.length-1].x, coords[0].z-coords[coords.length-1].z) > 1.5) continue;
       const shape = new THREE.Shape();
       shape.moveTo(coords[0].x, -coords[0].z);
       for (let i=1; i<coords.length; i++) shape.lineTo(coords[i].x, -coords[i].z);
