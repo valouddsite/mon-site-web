@@ -368,21 +368,47 @@ function resample(step){
   return out;
 }
 async function addElevation(pts){
-  const CH = 300;
-  for (let i = 0; i < pts.length; i += CH) {
-    const chunk = pts.slice(i, i + CH);
-    const r = await new Promise((ok, ko) => elevSvc.getElevationForLocations(
-      { locations: chunk.map(p => ({ lat: p.lat, lng: p.lng })) },
-      (res, st) => st === 'OK' ? ok(res) : ko(new Error(st))));
-    r.forEach((e, j) => chunk[j].y = e.elevation);
-    say('Altitude : ' + Math.min(100, Math.round((i + CH) / pts.length * 100)) + ' %');
+  if (!Array.isArray(pts) || pts.length < 2) throw new Error('Pas assez de points pour calculer le dénivelé.');
+  const CH = 300; // sous la limite de 512 points par requête Google Elevation
+  let completed = 0;
+  // En cas de refus temporaire ou de lot incomplet, divise le lot jusqu'à
+  // obtenir des réponses fiables au lieu de laisser toute la route à plat.
+  async function fetchChunk(chunk) {
+    try {
+      const result = await new Promise((ok, ko) => elevSvc.getElevationForLocations(
+        { locations: chunk.map(p => ({ lat: p.lat, lng: p.lng })) },
+        (res, status) => status === 'OK' && Array.isArray(res) && res.length === chunk.length
+          ? ok(res) : ko(new Error('Elevation API : ' + status))));
+      const values = result.map(e => e && Number.isFinite(e.elevation) ? e.elevation : null);
+      if (values.every(v => v !== null)) {
+        values.forEach((v, i) => { chunk[i].y = v; });
+        completed += chunk.length;
+        say('Altitude : ' + Math.min(100, Math.round(completed / pts.length * 100)) + ' %');
+        return;
+      }
+      throw new Error('Certaines altitudes sont absentes.');
+    } catch (err) {
+      if (chunk.length <= 8) throw err;
+      const mid = Math.floor(chunk.length / 2);
+      await fetchChunk(chunk.slice(0, mid));
+      await fetchChunk(chunk.slice(mid));
+    }
   }
-  const y0 = pts[0].y;
-  pts.forEach(p => p.y = +(p.y - y0).toFixed(2));  // départ = altitude 0
-  for (let k = 0; k < 2; k++) {                       // lissage léger
-    const c = pts.map(p => p.y);
-    for (let i = 1; i < pts.length - 1; i++) pts[i].y = (c[i - 1] + c[i] * 2 + c[i + 1]) / 4;
+  for (let i = 0; i < pts.length; i += CH) await fetchChunk(pts.slice(i, i + CH));
+  // Référence relative au départ, tout en conservant le profil vertical mesuré.
+  const base = pts[0].y;
+  const raw = pts.map(p => p.y - base);
+  // Un seul lissage léger réduit le bruit de mesure sans effacer les pentes.
+  // Les extrémités sont préservées pour éviter une variation artificielle au départ/à l'arrivée.
+  const filtered = raw.slice();
+  for (let i = 1; i < raw.length - 1; i++) {
+    const neighborMean = (raw[i - 1] + raw[i + 1]) / 2;
+    const deviation = Math.abs(raw[i] - neighborMean);
+    filtered[i] = deviation > 8
+      ? neighborMean + Math.sign(raw[i] - neighborMean) * Math.min(8, deviation) * 0.35
+      : (raw[i - 1] + 2 * raw[i] + raw[i + 1]) / 4;
   }
+  pts.forEach((p, i) => { p.y = +filtered[i].toFixed(2); });
 }
 
 /* ---------- Lissage visuel + décor OpenStreetMap pour l'aperçu 3D ---------- */
