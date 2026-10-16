@@ -701,15 +701,23 @@ async function loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, origi
   // quelques meshes au lieu d'un mesh et de matériaux par bâtiment.
   for (const [roofColor, geometries] of buildingBatches) {
     if (!geometries.length) continue;
-    const merged = mergeGeometries(geometries, true);
+    // Certains bâtiments OSM peuvent produire des groupes de matériaux différents.
+    // Si la fusion avec groupes échoue, réessaie sans groupes pour ne pas perdre tout le lot.
+    let merged = mergeGeometries(geometries, true);
+    let useRoofMaterial = true;
+    if (!merged) {
+      console.warn('Fusion des groupes de bâtiments impossible ; nouvel essai sans groupes.');
+      merged = mergeGeometries(geometries, false);
+      useRoofMaterial = false;
+    }
     for (const geo of geometries) geo.dispose();
     if (!merged) {
-      console.warn('Impossible de fusionner un lot de bâtiments OSM ; lot ignoré.');
+      console.warn('Fusion des bâtiments impossible pour ce lot ; lot ignoré.');
       continue;
     }
     const localRoofMat = new THREE.MeshStandardMaterial({ color:roofColor, roughness:1, side:THREE.DoubleSide });
-    const mesh = new THREE.Mesh(merged, [buildingMat, localRoofMat]);
-    mesh.castShadow = false; // les ombres de milliers de bâtiments coûteraient trop cher en temps réel
+    const mesh = new THREE.Mesh(merged, useRoofMaterial ? [buildingMat, localRoofMat] : buildingMat);
+    mesh.castShadow = false;
     mesh.receiveShadow = true;
     mesh.name = 'bâtiment OSM';
     mesh.userData.renderLayer = 'buildings';
