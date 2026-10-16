@@ -625,7 +625,7 @@ async function loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, origi
   };
   let buildings = 0, trees = 0, woods = 0, skippedBuildings = 0;
   const buildingBatches = new Map(); // Regroupe les bâtiments par couleur de toit pour réduire les draw calls.
-  const maxBuildings = 8000; // limite augmentée ; le regroupement permet d'en afficher davantage sans milliers de meshes
+  const maxBuildings = 50000; // limite demandée par l’utilisateur // limite augmentée ; le regroupement permet d'en afficher davantage sans milliers de meshes
   for (const el of data.elements || []) {
     const tags = el.tags || {};
     // Les arbres OSM sont des nodes sans geometry : ils sont ajoutés séparément plus bas.
