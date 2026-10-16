@@ -542,16 +542,23 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     new THREE.MeshStandardMaterial({ color:'#477f3b', roughness:1 }),
     new THREE.MeshStandardMaterial({ color:'#28582f', roughness:1 })
   ];
-  const treeNodes = (data.elements || []).filter(el => el.type === 'node' && el.tags && el.tags.natural === 'tree' && Number.isFinite(el.lat) && Number.isFinite(el.lon)).slice(0, 700);
-  const trunkGeo = new THREE.CylinderGeometry(.12,.18,1.8,5);
-  const crownGeo = new THREE.ConeGeometry(1.05,2.8,6);
+  const treeNodes = (data.elements || []).filter(el => el.type === 'node' && el.tags && el.tags.natural === 'tree' && Number.isFinite(el.lat) && Number.isFinite(el.lon)).slice(0, 1000);
+  const trunkGeo = new THREE.CylinderGeometry(.12,.2,1,6);
+  const broadleafGeo = new THREE.SphereGeometry(1,7,5);
+  const coniferGeo = new THREE.ConeGeometry(1,1,7);
   for (const node of treeNodes) {
-    const p = project({lat:node.lat,lon:node.lon});
+    const p = project({lat:node.lat,lon:node.lon}), tags=node.tags||{};
     const group = new THREE.Group();
-    const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y=.9; group.add(trunk);
-    const crown = new THREE.Mesh(crownGeo, leafMats[(node.id || 0)%leafMats.length]); crown.position.y=2.8; group.add(crown);
-    group.position.set(p.x,groundHeightAt(p.x,p.z),p.z); group.scale.setScalar(.75 + ((node.id || 0)%7)*.07);
-    group.name='arbre OSM'; scene.add(group); trees++;
+    const taggedHeight = parseFloat(String(tags.height||'').replace(/[^0-9.]/g,''));
+    const h = Math.max(3, Math.min(24, taggedHeight || 7 + ((node.id||0)%8)));
+    const conifer = tags.leaf_type === 'needleleaved';
+    const trunkHeight = h * .42, crownHeight = h * .62;
+    const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.scale.set(1,trunkHeight,1); trunk.position.y=trunkHeight/2; group.add(trunk);
+    const crown = new THREE.Mesh(conifer ? coniferGeo : broadleafGeo, leafMats[(node.id || 0)%leafMats.length]);
+    crown.scale.set(conifer ? h*.13 : h*.17, crownHeight/2, conifer ? h*.13 : h*.18);
+    crown.position.y=trunkHeight+crownHeight*.45; group.add(crown);
+    group.position.set(p.x,groundHeightAt(p.x,p.z),p.z);
+    group.name=conifer?'conifère OSM':'arbre feuillu OSM'; scene.add(group); trees++;
   }
   return { buildings, trees, woods };
 }
