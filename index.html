@@ -916,7 +916,7 @@ async function open3D(){
     for(let i=0;i<pts.length;i+=Math.max(1,Math.floor(pts.length/500))) linePts.push(new THREE.Vector3(pts[i].x,pts[i].y+0.13,pts[i].z));
     const lineGeo=new THREE.BufferGeometry().setFromPoints(linePts);
     const centerLine = new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#f2c230',transparent:true,opacity:.8})); centerLine.name='marquage route'; centerLine.userData.renderLayer='route'; group.add(centerLine);
-    createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, width);
+    const ground = createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, width);
     let decorStatus = 'Décor OSM non chargé.';
     try {
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
