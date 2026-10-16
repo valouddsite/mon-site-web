@@ -424,8 +424,31 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     x: (g.lon * Math.PI / 180 - originLng) * cosLat * R - cx,
     z: -(g.lat * Math.PI / 180 - originLat) * R - cz
   });
-  const buildingMat = new THREE.MeshStandardMaterial({ color:'#b9b3a8', roughness:1, side:THREE.DoubleSide });
+  // Texture de façade générée localement : pas besoin de télécharger des images externes.
+  const facadeCanvas = document.createElement('canvas');
+  facadeCanvas.width = 256; facadeCanvas.height = 256;
+  const ctx = facadeCanvas.getContext('2d');
+  ctx.fillStyle = '#b9b3a8'; ctx.fillRect(0,0,256,256);
+  ctx.fillStyle = '#777a7c';
+  for(let y=12;y<256;y+=42) for(let x=12;x<256;x+=48) {
+    ctx.fillRect(x,y,25,25);
+    ctx.fillStyle = '#b7d0d8'; ctx.fillRect(x+3,y+3,19,17);
+    ctx.fillStyle = '#eee4d0'; ctx.fillRect(x+11,y+3,3,17);
+    ctx.fillStyle = '#777a7c';
+  }
+  for(let y=0;y<256;y+=42){ctx.fillStyle='rgba(60,55,48,.25)';ctx.fillRect(0,y,256,3);}
+  const facadeTexture = new THREE.CanvasTexture(facadeCanvas);
+  facadeTexture.colorSpace = THREE.SRGBColorSpace;
+  facadeTexture.wrapS = facadeTexture.wrapT = THREE.RepeatWrapping;
+  facadeTexture.repeat.set(1, Math.max(1, (north-south)*111000/30));
+  const buildingMat = new THREE.MeshStandardMaterial({ color:'#ffffff', map:facadeTexture, roughness:1, side:THREE.DoubleSide });
+  const roofMat = new THREE.MeshStandardMaterial({ color:'#76685a', roughness:1, side:THREE.DoubleSide });
   const forestMat = new THREE.MeshStandardMaterial({ color:'#416d37', roughness:1, side:THREE.DoubleSide });
+  const groundHeightAt = (x,z) => {
+    let best=Infinity, y=0;
+    for(const p of pts){ const d=(p.x-x)*(p.x-x)+(p.z-z)*(p.z-z); if(d<best){best=d;y=p.y||0;} }
+    return y;
+  };
   let buildings = 0, trees = 0, woods = 0;
   for (const el of data.elements || []) {
     const tags = el.tags || {};
@@ -446,13 +469,18 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       const height = Math.max(3, Math.min(60, parseFloat(String(tags.height || '').replace(/[^0-9.]/g,'')) || levels * 3.2));
       const geo = new THREE.ExtrudeGeometry(shape, { depth:height, bevelEnabled:false });
       geo.rotateX(-Math.PI/2);
-      const mesh = new THREE.Mesh(geo, buildingMat);
-      mesh.position.y = 0; mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'bâtiment OSM';
+      const mesh = new THREE.Mesh(geo, [buildingMat, roofMat]);
+      const centerX=coords.reduce((sum,p)=>sum+p.x,0)/coords.length;
+      const centerZ=coords.reduce((sum,p)=>sum+p.z,0)/coords.length;
+      mesh.position.y = groundHeightAt(centerX,centerZ);
+      mesh.castShadow = true; mesh.receiveShadow = true; mesh.name = 'bâtiment OSM';
       scene.add(mesh); buildings++;
     } else if (isForest && woods < 120) {
       const geo = new THREE.ShapeGeometry(shape); geo.rotateX(-Math.PI/2);
       const mesh = new THREE.Mesh(geo, forestMat);
-      mesh.position.y = -.18; mesh.name = 'végétation OSM'; scene.add(mesh); woods++;
+      const centerX=coords.reduce((sum,p)=>sum+p.x,0)/coords.length;
+      const centerZ=coords.reduce((sum,p)=>sum+p.z,0)/coords.length;
+      mesh.position.y = groundHeightAt(centerX,centerZ)-.18; mesh.name = 'végétation OSM'; scene.add(mesh); woods++;
     }
   }
   const trunkMat = new THREE.MeshStandardMaterial({ color:'#60452f', roughness:1 });
@@ -469,7 +497,7 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     const group = new THREE.Group();
     const trunk = new THREE.Mesh(trunkGeo, trunkMat); trunk.position.y=.9; group.add(trunk);
     const crown = new THREE.Mesh(crownGeo, leafMats[(node.id || 0)%leafMats.length]); crown.position.y=2.8; group.add(crown);
-    group.position.set(p.x,0,p.z); group.scale.setScalar(.75 + ((node.id || 0)%7)*.07);
+    group.position.set(p.x,groundHeightAt(p.x,p.z),p.z); group.scale.setScalar(.75 + ((node.id || 0)%7)*.07);
     group.name='arbre OSM'; scene.add(group); trees++;
   }
   return { buildings, trees, woods };
