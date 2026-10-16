@@ -632,6 +632,13 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
     const isBuilding = !!tags.building;
     const isForest = tags.landuse === 'forest' || tags.landuse === 'orchard' || tags.natural === 'wood' || tags.natural === 'scrub';
     if (!isBuilding && !isForest) continue;
+    // Une fois le maximum atteint, on ignore seulement les bâtiments excédentaires
+    // avant de calculer leurs formes ; les bâtiments déjà créés restent affichés
+    // et les arbres/zones boisées continuent d'être traités.
+    if (isBuilding && !isForest && buildings >= maxBuildings) {
+      skippedBuildings++;
+      continue;
+    }
     // Les multipolygones OSM portent leurs contours dans members[].geometry.
     let rings = [];
     if (el.type === 'relation' && Array.isArray(el.members)) {
@@ -665,7 +672,6 @@ async function loadOSMDecor(THREE, scene, pts, originLat, originLng, cosLat, cx,
       for (let i=1; i<coords.length; i++) shape.lineTo(coords[i].x, -coords[i].z);
       shape.closePath();
     if (isBuilding) {
-      if (buildings >= maxBuildings) { skippedBuildings++; continue; }
       const levels = Math.max(1, Math.min(30, parseFloat(tags['building:levels']) || 0));
       const taggedHeight = parseFloat(String(tags.height || '').replace(/[^0-9.]/g,''));
       const height = Math.max(2.5, Math.min(90, taggedHeight || (levels ? levels * 3.15 + 0.8 : (/house|detached|garage|shed|hut/.test(tags.building) ? 5.5 : 8.5))));
