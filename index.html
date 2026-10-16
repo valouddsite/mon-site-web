@@ -191,6 +191,7 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
         <option value="auto">Bâtiments générés automatiquement</option>
       </select>
     </label>
+    <button id="reloadRealBuildings" type="button" style="padding:7px 9px">Recharger les bâtiments réels</button>
     <label><input type="checkbox" data-render-layer="route" checked> Route et bordures</label>
     <label><input type="checkbox" data-render-layer="trees" checked> Arbres</label>
     <label><input type="checkbox" data-render-layer="buildings" checked> Bâtiments</label>
@@ -895,6 +896,14 @@ function applyPreviewLayers(){
   });
 }
 $('buildingMode').addEventListener('change', applyPreviewLayers);
+$('reloadRealBuildings').addEventListener('click', async () => {
+  $('buildingMode').value = 'osm';
+  if (!path || path.length < 2) {
+    say('Trace d’abord un parcours complet avant de recharger les bâtiments réels.', true);
+    return;
+  }
+  await open3D();
+});
 document.querySelectorAll('[data-render-layer]').forEach(input => input.addEventListener('change', applyPreviewLayers));
 window.addEventListener('keydown', e => { if (e.key === 'Escape') $('preview3d').classList.remove('show'); });
 
