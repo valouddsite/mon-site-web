@@ -185,6 +185,12 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
   <canvas id="scene3d"></canvas>
   <div class="render-options" aria-label="Options d’affichage du rendu 3D">
     <strong>Afficher dans la scène</strong>
+    <label style="display:flex;flex-direction:column;align-items:stretch;gap:4px">Type de bâtiments
+      <select id="buildingMode" style="background:#17191b;color:#eef0f2;border:1px solid #4a5056;border-radius:5px;padding:6px">
+        <option value="osm">Vrais bâtiments (OpenStreetMap)</option>
+        <option value="auto">Bâtiments générés automatiquement</option>
+      </select>
+    </label>
     <label><input type="checkbox" data-render-layer="route" checked> Route et bordures</label>
     <label><input type="checkbox" data-render-layer="trees" checked> Arbres</label>
     <label><input type="checkbox" data-render-layer="buildings" checked> Bâtiments</label>
@@ -721,6 +727,7 @@ async function loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, origi
     mesh.receiveShadow = true;
     mesh.name = 'bâtiment OSM';
     mesh.userData.renderLayer = 'buildings';
+    mesh.userData.buildingSource = 'osm';
     scene.add(mesh);
   }
   const trunkMat = new THREE.MeshStandardMaterial({ color:'#60452f', roughness:1 });
@@ -801,6 +808,7 @@ function addFallbackBuildings(THREE, scene, pts, roadWidth) {
     house.position.set(x,groundHeightAt(x,z),z);
     house.name='maison générée automatiquement';
     house.userData.renderLayer='buildings';
+    house.userData.buildingSource='auto';
     scene.add(house); count++;
     if(count>=80) break;
   }
@@ -878,8 +886,15 @@ function applyPreviewLayers(){
       else if (name === 'route' || name.startsWith('bordure ') || name === 'marquage route') layer = 'route';
     }
     if(layer && Object.prototype.hasOwnProperty.call(enabled,layer)) obj.visible = enabled[layer];
+    if (layer === 'buildings') {
+      const mode = $('buildingMode')?.value || 'osm';
+      const source = obj.userData && obj.userData.buildingSource;
+      if (source === 'osm') obj.visible = enabled.buildings && mode === 'osm';
+      else if (source === 'auto') obj.visible = enabled.buildings && mode === 'auto';
+    }
   });
 }
+$('buildingMode').addEventListener('change', applyPreviewLayers);
 document.querySelectorAll('[data-render-layer]').forEach(input => input.addEventListener('change', applyPreviewLayers));
 window.addEventListener('keydown', e => { if (e.key === 'Escape') $('preview3d').classList.remove('show'); });
 
@@ -965,9 +980,9 @@ async function open3D(){
       set3DLoading(48, 'Recherche du décor réel', 'Chargement des empreintes de bâtiments, arbres et zones boisées OpenStreetMap.');
       say('Chargement des bâtiments et de la végétation OpenStreetMap…');
       const decor = await loadOSMDecor(THREE, mergeGeometries, scene, pts, originLat, originLng, cosLat, cx, cz, width);
-      // Garantit un décor de bâtiments même si OSM ne fournit aucune empreinte.
+      // Prépare aussi des bâtiments automatiques pour laisser l'utilisateur choisir la source.
+      const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
       if (decor.buildings === 0) {
-        const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
         decorStatus = generatedBuildings + ' bâtiments générés automatiquement (aucun bâtiment OSM disponible). ';
       }
       if (decor.trees === 0) {
@@ -981,6 +996,7 @@ async function open3D(){
       set3DLoading(78, 'Mode de secours', 'OpenStreetMap ne répond pas. Création de bâtiments et d’arbres de secours.');
       const generatedBuildings = addFallbackBuildings(THREE, scene, pts, width);
       const fallbackTrees = addFallbackDecor(THREE, scene, pts, width);
+      $('buildingMode').value = 'auto';
       decorStatus = 'OpenStreetMap indisponible : ' + generatedBuildings + ' bâtiments générés automatiquement et ' + fallbackTrees.trees + ' arbres de secours affichés hors chaussée.';
     }
     const camera=new THREE.PerspectiveCamera(48,host.clientWidth/Math.max(300,host.clientHeight-100),.1,20000);
