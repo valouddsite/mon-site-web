@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AC Track Mapper – du tracé Google Maps à Assetto Corsa</title>
+<style>
+:root{--bg:#1c1e21;--panel:#25282c;--line:#3a3e44;--tx:#eceff1;--mut:#9aa3ab;--yel:#f2c230;--red:#e0364b;--grn:#2fb872}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--tx);display:flex}
+aside{width:360px;max-width:100%;height:100%;overflow-y:auto;background:var(--panel);border-right:4px solid var(--yel);padding:18px;display:flex;flex-direction:column;gap:16px}
+#map{flex:1;height:100%;min-width:0;background:#2b2f34}
+h1{font-size:21px;margin:0;letter-spacing:-.01em}
+h1 span{display:block;font-size:13px;font-weight:400;color:var(--mut);margin-top:2px}
+h2{font-size:14px;margin:0 0 8px;color:var(--yel)}
+section{border-top:1px solid var(--line);padding-top:14px}
+p{margin:0 0 8px;color:var(--mut);font-size:13px}
+label{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;margin:6px 0}
+input[type=text],input[type=password],input[type=number]{width:100%;background:#17191b;border:1px solid var(--line);color:var(--tx);padding:8px 10px;border-radius:6px;font:inherit}
+input[type=number]{width:90px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--yel);outline-offset:2px}
+.row{display:flex;gap:8px}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#30343a;color:var(--tx);padding:8px 12px;border-radius:6px}
+button:hover{background:#3a3f46}
+button.on{background:var(--yel);color:#1c1e21;border-color:var(--yel);font-weight:600}
+button.main{background:var(--red);border-color:var(--red);font-weight:600;width:100%}
+button.main:hover{background:#c92e42}
+.modes button{flex:1;padding:8px 4px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.stat{display:flex;justify-content:space-between;font-size:13px;padding:3px 0}
+.stat b{color:var(--tx)}
+#msg{font-size:13px;min-height:18px;color:var(--yel)}
+#msg.err{color:#ff7a8a}
+#setup{display:none}
+#setup.show{display:block}
+ol{margin:0 0 10px;padding-left:18px;color:var(--mut);font-size:13px}
+ol li{margin:3px 0}
+code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
+.hint{font-size:12px;color:var(--mut)}
+@media (max-width:760px){
+ body{flex-direction:column-reverse}
+ aside{width:100%;height:46%;border-right:0;border-top:4px solid var(--yel)}
+ #map{height:54%;flex:none;width:100%}
+}
+</style>
+</head>
+<body>
+<aside>
+  <h1>AC Track Mapper<span>Dessine un tracé sur Google Maps, exporte-le pour Assetto Corsa.</span></h1>
+
+  <section id="setup">
+    <h2>Connecter Google Maps</h2>
+    <ol>
+      <li>Crée une clé sur <code>console.cloud.google.com</code></li>
+      <li>Active : Maps JavaScript, Directions, Elevation, Geocoding</li>
+      <li>Colle la clé ci-dessous</li>
+    </ol>
+    <input id="key" type="password" placeholder="Clé API Google Maps" autocomplete="off">
+    <div class="row" style="margin-top:8px"><button class="main" id="keyBtn">Charger la carte</button></div>
+    <p class="hint" style="margin-top:6px">La clé reste dans ton navigateur (localStorage), elle n'est envoyée qu'à Google.</p>
+  </section>
+
+  <section id="tools" style="border-top:0;padding-top:0">
+    <h2>1. Trouver le lieu</h2>
+    <div class="row"><input id="q" type="text" placeholder="Ville, col, adresse…"><button id="go">Aller</button></div>
+  </section>
+
+  <section>
+    <h2>2. Placer les points</h2>
+    <p>Choisis un type puis clique sur la carte. Les balises forcent le passage. Glisse un point pour le déplacer, clic droit pour le supprimer.</p>
+    <div class="row modes">
+      <button data-mode="start" class="on">Départ</button>
+      <button data-mode="wp">Balise</button>
+      <button data-mode="end">Arrivée</button>
+    </div>
+    <label style="margin-top:10px"><span>Circuit en boucle (arrivée = départ)</span><input type="checkbox" id="loop"></label>
+    <div class="row" style="margin-top:6px">
+      <button id="undo" style="flex:1">Retirer la dernière balise</button>
+      <button id="clear" style="flex:1">Tout effacer</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>3. Le tracé</h2>
+    <div class="stat"><span>Balises</span><b id="sWp">0</b></div>
+    <div class="stat"><span>Longueur</span><b id="sLen">–</b></div>
+    <div class="stat"><span>Points calculés</span><b id="sPts">–</b></div>
+    <div id="msg">Place d'abord un départ.</div>
+  </section>
+
+  <section>
+    <h2>4. Générer la piste Assetto Corsa</h2>
+    <label><span>Nom de la piste</span><input type="text" id="tname" value="ma_piste" style="width:160px"></label>
+    <div class="row" style="margin:6px 0"><input id="city" type="text" placeholder="Ville"><input id="country" type="text" placeholder="Pays"></div>
+    <label><span>Largeur de route (m)</span><input type="number" id="width" value="9" min="2" max="30" step="0.5"></label>
+    <label><span>Herbe de chaque côté (m)</span><input type="number" id="grass" value="15" min="0" max="100"></label>
+    <label><span>Places sur la grille</span><input type="number" id="grid" value="4" min="1" max="24"></label>
+    <label><span>Emplacements de stands</span><input type="number" id="pits" value="4" min="0" max="24"></label>
+    <label><span>Murs le long de la piste</span><input type="checkbox" id="walls" checked></label>
+    <label><span>Bâtiments (OpenStreetMap)</span><input type="checkbox" id="bld" class="scen" checked></label>
+    <label><span>Végétation (OpenStreetMap)</span><input type="checkbox" id="veg" class="scen" checked></label>
+    <label><span>Zone de décor autour du tracé (m)</span><input type="number" id="margin" class="scen" value="200" min="50" max="600" step="50"></label>
+    <label><span>Arbres par hectare en forêt</span><input type="number" id="density" class="scen" value="25" min="5" max="120"></label>
+    <label><span>Un point tous les (m)</span><input type="number" id="step" value="3" min="1" max="50"></label>
+    <label><span>Ajouter l'altitude (Elevation API)</span><input type="checkbox" id="elev" checked></label>
+    <button class="main" id="pack" style="margin-top:8px">Générer le pack (.zip)</button>
+    <div id="srv" class="hint" style="margin-top:8px">Recherche du serveur local…</div>
+    <p class="hint" style="margin-top:8px">Le zip contient (avec le serveur) les textures, le décor, et la route, les bordures, l'herbe, les murs, les repères de départ, de stands et de chrono, les fichiers de données, la mini-carte et le script Blender qui produit le FBX pour KsEditor.</p>
+  </section>
+
+  <section>
+    <h2>Autres exports</h2>
+    <div class="grid">
+      <button data-fmt="obj">Route seule (.obj)</button>
+      <button data-fmt="csv">Points (.csv)</button>
+      <button data-fmt="gpx">GPS (.gpx)</button>
+      <button data-fmt="geojson">GeoJSON</button>
+    </div>
+  </section>
+
+  <section>
+    <h2>Après le téléchargement</h2>
+    <ol>
+      <li>Dézippe. Si le dossier ne contient pas de <code>.fbx</code>, lance <code>blender -b -P build_fbx.py</code> dans <code>source/</code></li>
+      <li>Ouvre le <code>.fbx</code> dans KsEditor, vérifie le sens des flèches <code>AC_START</code>, ajoute les textures, exporte en <code>.kn5</code></li>
+      <li>Les textures (route, bordures, herbe, murs, bâtiments, arbres) sont déjà dans le zip, à côté du <code>.fbx</code>. Pour les changer, remplace les PNG du dossier <code>textures/</code> du projet</li>
+      <li>Copie le dossier dans <code>content/tracks/</code></li>
+      <li>Roule un tour en jeu pour enregistrer le <code>fast_lane.ai</code></li>
+    </ol>
+  </section>
+</aside>
+<div id="map"></div>
+
+<script>
+let map, dirSvc, elevSvc, geocoder, poly = null;
+let startM = null, endM = null, wps = [];
+let mode = 'start', path = [], timer = null, seq = 0;
+const $ = id => document.getElementById(id);
+const say = (t, err) => { const m = $('msg'); m.textContent = t; m.className = err ? 'err' : ''; };
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
+
+/* ---------- Chargement de Google Maps ---------- */
+function loadMaps(key){
+  if (window.google && google.maps) return;
+  window.initMap = initMap;
+  window.gm_authFailure = () => { $('setup').classList.add('show'); say('Clé refusée : vérifie la clé et les API activées.', true); };
+  const s = document.createElement('script');
+  s.src = 'https://maps.googleapis.com/maps/api/js?key=' + encodeURIComponent(key) + '&libraries=geometry&language=fr&callback=initMap';
+  s.onerror = () => say('Impossible de joindre Google Maps (connexion ?).', true);
+  document.head.appendChild(s);
+}
+$('keyBtn').onclick = () => {
+  const k = $('key').value.trim();
+  if (!k) return say('Colle ta clé API.', true);
+  store.set('gmkey', k); $('setup').classList.remove('show'); loadMaps(k);
+};
+const saved = store.get('gmkey');
+if (saved) { $('key').value = saved; loadMaps(saved); } else { $('setup').classList.add('show'); }
+
+function initMap(){
+  map = new google.maps.Map($('map'), {
+    center: { lat: 45.0, lng: 6.4 }, zoom: 11, mapTypeId: 'hybrid',
+    streetViewControl: false, fullscreenControl: false, gestureHandling: 'greedy'
+  });
+  dirSvc = new google.maps.DirectionsService();
+  elevSvc = new google.maps.ElevationService();
+  geocoder = new google.maps.Geocoder();
+  map.addListener('click', e => addPoint(e.latLng));
+  say('Place d\'abord un départ.');
+}
+
+/* ---------- Recherche d'un lieu ---------- */
+$('go').onclick = search;
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+function search(){
+  if (!geocoder) return say('Charge d\'abord la carte avec ta clé API.', true);
+  geocoder.geocode({ address: $('q').value }, (r, st) => {
+    if (st !== 'OK') return say('Lieu introuvable.', true);
+    map.fitBounds(r[0].geometry.viewport); say('Lieu trouvé.');
+  });
+}
+
+/* ---------- Points : départ, balises, arrivée ---------- */
+document.querySelectorAll('.modes button').forEach(b => b.onclick = () => setMode(b.dataset.mode));
+function setMode(m){
+  mode = m;
+  document.querySelectorAll('.modes button').forEach(b => b.classList.toggle('on', b.dataset.mode === m));
+}
+function icon(color){
+  return { path: google.maps.SymbolPath.CIRCLE, scale: 13, fillColor: color, fillOpacity: 1, strokeColor: '#fff', strokeWeight: 2 };
+}
+function mk(pos, color, label){
+  const m = new google.maps.Marker({ map, position: pos, draggable: true, icon: icon(color),
+    label: { text: label, color: '#fff', fontWeight: '700', fontSize: '12px' } });
+  m.addListener('dragend', schedule);
+  m.addListener('rightclick', () => removeMarker(m));
+  return m;
+}
+function addPoint(pos){
+  if (!map) return;
+  if (mode === 'start') {
+    if (startM) startM.setPosition(pos); else startM = mk(pos, '#2fb872', 'D');
+    setMode('wp');
+  } else if (mode === 'end') {
+    if (endM) endM.setPosition(pos); else endM = mk(pos, '#e0364b', 'A');
+    setMode('wp');
+  } else {
+    if (wps.length >= 23) return say('Maximum 23 balises (limite Google Directions).', true);
+    wps.push(mk(pos, '#f2c230', ''));
+    relabel();
+  }
+  schedule();
+}
+function removeMarker(m){
+  m.setMap(null);
+  if (m === startM) startM = null;
+  else if (m === endM) endM = null;
+  else { wps = wps.filter(w => w !== m); relabel(); }
+  schedule();
+}
+function relabel(){ wps.forEach((w, i) => w.setLabel({ text: String(i + 1), color: '#1c1e21', fontWeight: '700', fontSize: '12px' })); }
+$('undo').onclick = () => { const w = wps.pop(); if (w) { w.setMap(null); schedule(); } };
+$('clear').onclick = () => {
+  [startM, endM, ...wps].forEach(m => m && m.setMap(null));
+  startM = endM = null; wps = []; path = [];
+  if (poly) { poly.setMap(null); poly = null; }
+  setMode('start'); stats(); say('Place d\'abord un départ.');
+};
+$('loop').onchange = schedule;
+
+/* ---------- Calcul de l'itinéraire ---------- */
+function schedule(){ clearTimeout(timer); timer = setTimeout(computeRoute, 350); }
+function stats(){
+  $('sWp').textContent = wps.length;
+  $('sLen').textContent = path.length ? (google.maps.geometry.spherical.computeLength(path) / 1000).toFixed(2) + ' km' : '–';
+  $('sPts').textContent = path.length || '–';
+}
+function computeRoute(){
+  stats();
+  const loop = $('loop').checked;
+  if (!startM) return say('Place d\'abord un départ.');
+  if (!loop && !endM) return say('Place maintenant une arrivée (ou coche « boucle »).');
+  const dest = loop ? startM.getPosition() : endM.getPosition();
+  const me = ++seq;
+  say('Calcul du tracé…');
+  dirSvc.route({
+    origin: startM.getPosition(), destination: dest,
+    waypoints: wps.map(w => ({ location: w.getPosition(), stopover: false })),
+    travelMode: 'DRIVING', optimizeWaypoints: false
+  }, (res, st) => {
+    if (me !== seq) return;
+    if (st !== 'OK') { say('Aucun itinéraire (' + st + '). Rapproche les points des routes.', true); return; }
+    path = [];
+    res.routes[0].legs.forEach(l => l.steps.forEach(s => s.path.forEach(p => path.push(p))));
+    if (poly) poly.setMap(null);
+    poly = new google.maps.Polyline({ map, path, strokeColor: '#f2c230', strokeOpacity: .95, strokeWeight: 5, clickable: false });
+    stats(); say('Tracé prêt. Ajoute des balises pour le forcer, ou exporte.');
+  });
+}
+
+/* ---------- Rééchantillonnage + projection locale ---------- */
+const R = 6371008.8;
+function resample(step){
+  const lat0 = path[0].lat() * Math.PI / 180, lng0 = path[0].lng() * Math.PI / 180;
+  const pr = p => ({ x: (p.lng() * Math.PI / 180 - lng0) * Math.cos(lat0) * R, z: -(p.lat() * Math.PI / 180 - lat0) * R, lat: p.lat(), lng: p.lng() });
+  const pts = path.map(pr), out = [pts[0]];
+  let carry = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i], d = Math.hypot(b.x - a.x, b.z - a.z);
+    if (d === 0) continue;
+    let t = step - carry;
+    while (t <= d) {
+      const f = t / d;
+      out.push({ x: a.x + (b.x - a.x) * f, z: a.z + (b.z - a.z) * f, lat: a.lat + (b.lat - a.lat) * f, lng: a.lng + (b.lng - a.lng) * f });
+      t += step;
+    }
+    carry = d - (t - step);
+  }
+  const last = pts[pts.length - 1], q = out[out.length - 1];
+  if (Math.hypot(last.x - q.x, last.z - q.z) > step * .25) out.push(last);
+  let s = 0;
+  out.forEach((p, i) => { if (i) s += Math.hypot(p.x - out[i - 1].x, p.z - out[i - 1].z); p.d = s; p.y = 0; });
+  return out;
+}
+async function addElevation(pts){
+  const CH = 300;
+  for (let i = 0; i < pts.length; i += CH) {
+    const chunk = pts.slice(i, i + CH);
+    const r = await new Promise((ok, ko) => elevSvc.getElevationForLocations(
+      { locations: chunk.map(p => ({ lat: p.lat, lng: p.lng })) },
+      (res, st) => st === 'OK' ? ok(res) : ko(new Error(st))));
+    r.forEach((e, j) => chunk[j].y = e.elevation);
+    say('Altitude : ' + Math.min(100, Math.round((i + CH) / pts.length * 100)) + ' %');
+  }
+  const y0 = pts[0].y;
+  pts.forEach(p => p.y = +(p.y - y0).toFixed(2));  // départ = altitude 0
+  for (let k = 0; k < 2; k++) {                       // lissage léger
+    const c = pts.map(p => p.y);
+    for (let i = 1; i < pts.length - 1; i++) pts[i].y = (c[i - 1] + c[i] * 2 + c[i + 1]) / 4;
+  }
+}
+
+/* ---------- Formats d'export ---------- */
+function toOBJ(pts, w){
+  const L = ['# AC Track Mapper – 1 unité = 1 mètre, Y = altitude (départ = 0)', 'o 1ROAD'];
+  const n = pts.length, total = pts[n - 1].d || 1;
+  pts.forEach((p, i) => {
+    const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+    let tx = b.x - a.x, tz = b.z - a.z; const l = Math.hypot(tx, tz) || 1; tx /= l; tz /= l;
+    const nx = -tz * w / 2, nz = tx * w / 2;
+    L.push(`v ${(p.x + nx).toFixed(3)} ${p.y.toFixed(3)} ${(p.z + nz).toFixed(3)}`);
+    L.push(`v ${(p.x - nx).toFixed(3)} ${p.y.toFixed(3)} ${(p.z - nz).toFixed(3)}`);
+  });
+  pts.forEach(p => { const v = p.d / w; L.push(`vt 0 ${v.toFixed(4)}`); L.push(`vt 1 ${v.toFixed(4)}`); });
+  L.push('vn 0 1 0');
+  for (let i = 0; i < n - 1; i++) {
+    const a = i * 2 + 1, b = a + 1, c = a + 2, d = a + 3;
+    L.push(`f ${a}/${a}/1 ${c}/${c}/1 ${d}/${d}/1 ${b}/${b}/1`);
+  }
+  return L.join('\n');
+}
+function toCSV(pts){
+  return 'index,lat,lng,x_m,y_m,z_m,distance_m\n' +
+    pts.map((p, i) => [i, p.lat.toFixed(7), p.lng.toFixed(7), p.x.toFixed(2), p.y.toFixed(2), p.z.toFixed(2), p.d.toFixed(1)].join(',')).join('\n');
+}
+function toGPX(pts, withEle){
+  const wp = (m, name) => m ? `<wpt lat="${m.getPosition().lat()}" lon="${m.getPosition().lng()}"><name>${name}</name></wpt>\n` : '';
+  return '<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="1.1" creator="AC Track Mapper" xmlns="http://www.topografix.com/GPX/1/1">\n' +
+    wp(startM, 'Depart') + wps.map((w, i) => wp(w, 'Balise ' + (i + 1))).join('') + wp($('loop').checked ? null : endM, 'Arrivee') +
+    '<trk><name>AC Track</name><trkseg>\n' +
+    pts.map(p => `<trkpt lat="${p.lat.toFixed(7)}" lon="${p.lng.toFixed(7)}">${withEle ? `<ele>${p.y.toFixed(2)}</ele>` : ''}</trkpt>`).join('\n') +
+    '\n</trkseg></trk></gpx>';
+}
+function toGeoJSON(pts, withEle){
+  const pt = (m, name) => m && ({ type: 'Feature', properties: { name }, geometry: { type: 'Point', coordinates: [m.getPosition().lng(), m.getPosition().lat()] } });
+  return JSON.stringify({ type: 'FeatureCollection', features: [
+    { type: 'Feature', properties: { name: 'AC Track' }, geometry: { type: 'LineString',
+      coordinates: pts.map(p => withEle ? [+p.lng.toFixed(7), +p.lat.toFixed(7), +p.y.toFixed(2)] : [+p.lng.toFixed(7), +p.lat.toFixed(7)]) } },
+    pt(startM, 'Depart'), ...wps.map((w, i) => pt(w, 'Balise ' + (i + 1))), $('loop').checked ? null : pt(endM, 'Arrivee')
+  ].filter(Boolean) }, null, 1);
+}
+function download(name, text, type){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+document.querySelectorAll('[data-fmt]').forEach(b => b.onclick = async () => {
+  if (path.length < 2) return say('Trace d\'abord un parcours complet.', true);
+  const step = Math.max(1, +$('step').value || 5), width = Math.max(2, +$('width').value || 9);
+  const wantEle = $('elev').checked;
+  const pts = resample(step);
+  if (pts.length > 20000) return say('Trop de points (' + pts.length + '). Augmente l\'espacement.', true);
+  let hasEle = false;
+  if (wantEle) {
+    try { say('Lecture des altitudes…'); await addElevation(pts); hasEle = true; }
+    catch (e) { say('Altitude indisponible (' + e.message + '), export à plat.', true); }
+  }
+  const f = b.dataset.fmt;
+  if (f === 'obj') download('ac_track_road.obj', toOBJ(pts, width), 'text/plain');
+  if (f === 'csv') download('ac_track_points.csv', toCSV(pts), 'text/csv');
+  if (f === 'gpx') download('ac_track.gpx', toGPX(pts, hasEle), 'application/gpx+xml');
+  if (f === 'geojson') download('ac_track.geojson', toGeoJSON(pts, hasEle), 'application/geo+json');
+  say('Export terminé : ' + pts.length + ' points, ' + (pts[pts.length - 1].d / 1000).toFixed(2) + ' km.');
+});
+
+/* =================== Pack Assetto Corsa =================== */
+/* PACK:BEGIN */
+const crcT = (() => { const t = []; for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+function crc32(b){ let c = ~0; for (let i = 0; i < b.length; i++) c = crcT[(c ^ b[i]) & 255] ^ (c >>> 8); return ~c >>> 0; }
+function zipBlob(files){
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  for (const f of files) {
+    const nm = enc.encode(f.name), crc = crc32(f.data), sz = f.data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(12, 0x21, true);
+    lh.setUint32(14, crc, true); lh.setUint32(18, sz, true); lh.setUint32(22, sz, true); lh.setUint16(26, nm.length, true);
+    parts.push(new Uint8Array(lh.buffer), nm, f.data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(14, 0x21, true);
+    ch.setUint32(16, crc, true); ch.setUint32(20, sz, true); ch.setUint32(24, sz, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    cen.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + sz;
+  }
+  const csz = cen.reduce((s, a) => s + a.length, 0), e = new DataView(new ArrayBuffer(22));
+  e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+  e.setUint32(12, csz, true); e.setUint32(16, off, true);
+  return new Blob([...parts, ...cen, new Uint8Array(e.buffer)], { type: 'application/zip' });
+}
+
+function acSmooth(P, passes, closed){
+  const n = P.length;
+  for (let k = 0; k < passes; k++) {
+    const c = P.map(p => ({ x: p.x, y: p.y, z: p.z }));
+    for (let i = 0; i < n; i++) {
+      if (!closed && (i === 0 || i === n - 1)) continue;
+      const a = c[(i - 1 + n) % n], b = c[i], d = c[(i + 1) % n];
+      P[i].x = (a.x + 2 * b.x + d.x) / 4; P[i].y = (a.y + 2 * b.y + d.y) / 4; P[i].z = (a.z + 2 * b.z + d.z) / 4;
+    }
+  }
+}
+function acFrames(P, closed){
+  const n = P.length, tg = [], dist = [0];
+  for (let i = 0; i < n; i++) {
+    const a = (closed || i > 0) ? P[(i - 1 + n) % n] : P[i], b = (closed || i < n - 1) ? P[(i + 1) % n] : P[i];
+    const tx = b.x - a.x, tz = b.z - a.z, l = Math.hypot(tx, tz) || 1;
+    tg.push([tx / l, tz / l]);
+    if (i) dist.push(dist[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].z - P[i - 1].z));
+  }
+  return { tg, dist };
+}
+function acEmit(L, st, name, n, vert, uvs, closed, dbl){
+  L.push('o ' + name);
+  for (let i = 0; i < n; i++) for (const q of vert(i)) L.push('v ' + q.map(c => c.toFixed(3)).join(' '));
+  for (let i = 0; i < n; i++) { const u = uvs[i].toFixed(4); L.push('vt 0 ' + u, 'vt 1 ' + u); }
+  const b = st.base;
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const j = (i + 1) % n, a = b + i * 2 + 1, c = b + j * 2 + 1, e = b + j * 2 + 2, f = b + i * 2 + 2;
+    L.push(`f ${a}/${a} ${c}/${c} ${e}/${e} ${f}/${f}`);
+    if (dbl) L.push(`f ${f}/${f} ${e}/${e} ${c}/${c} ${a}/${a}`);
+  }
+  st.base += n * 2;
+}
+function acMesh(P, F, o, closed){
+  const L = ['# 1 unité = 1 m, Y haut'], st = { base: 0 }, n = P.length, w = o.w, k = o.kerb, g = o.grass;
+  const rib = (name, hi, lo, dy, uvw) => acEmit(L, st, name, n, i => {
+    const p = P[i], t = F.tg[i], nx = -t[1], nz = t[0];
+    return [[p.x + nx * hi, p.y + dy, p.z + nz * hi], [p.x + nx * lo, p.y + dy, p.z + nz * lo]];
+  }, F.dist.map(d => d / uvw), closed, false);
+  const wall = (name, off, h) => acEmit(L, st, name, n, i => {
+    const p = P[i], t = F.tg[i], x = p.x - t[1] * off, z = p.z + t[0] * off;
+    return [[x, p.y, z], [x, p.y + h, z]];
+  }, F.dist.map(d => d / h), closed, true);
+  rib('1ROAD', w / 2, -w / 2, 0, w);
+  rib('1KERB_R', w / 2 + k, w / 2, .02, k * 4);
+  rib('1KERB_L', -w / 2, -w / 2 - k, .02, k * 4);
+  rib('1GRASS_R', w / 2 + k + g, w / 2 + k, -.05, 10);
+  rib('1GRASS_L', -w / 2 - k, -w / 2 - k - g, -.05, 10);
+  if (o.walls) { wall('1WALL_R', w / 2 + k + g, 1.2); wall('1WALL_L', -(w / 2 + k + g), 1.2); }
+  return L.join('\n') + '\n';
+}
+function acMarkers(P, F, o, closed){
+  const total = F.dist[F.dist.length - 1], line = 8 * o.grid + 10, side = o.w / 2 + 1.5, M = [];
+  if (total < line + 60) throw new Error('Tracé trop court (' + Math.round(total) + ' m) : minimum ' + (line + 60) + ' m.');
+  const add = (name, d, lat = 0) => {
+    let bi = 0, bd = 1e18;
+    F.dist.forEach((v, i) => { const x = Math.abs(v - d); if (x < bd) { bd = x; bi = i; } });
+    const p = P[bi], t = F.tg[bi];
+    M.push({ name, x: p.x - t[1] * lat, y: p.y, z: p.z + t[0] * lat, hx: t[0], hz: t[1] });
+  };
+  for (let i = 0; i < o.grid; i++) add('AC_START_' + i, line - 8 * (i + 1), i % 2 ? -2.5 : 2.5);
+  for (let i = 0; i < o.pits; i++) add('AC_PIT_' + i, line + 15 + 10 * i, o.w / 2 + 6);
+  add('AC_HOTLAP_START_0', line - 10);
+  add('AC_TIME_0_L', line, -side); add('AC_TIME_0_R', line, side);
+  if (!closed) { add('AC_TIME_1_L', total - 10, -side); add('AC_TIME_1_R', total - 10, side); }
+  return M;
+}
+const SURF = [['ROAD', .98, 1, 'NULL'], ['KERB', .93, 1, 'KERB'], ['GRASS', .60, 0, 'GRASS'], ['SAND', .55, 0, 'SAND'], ['WALL', .80, 0, 'NULL']];
+function acSurfaces(){
+  return SURF.map(([key, fr, ok, ff], i) => `[SURFACE_${i}]\nKEY=${key}\nFRICTION=${fr.toFixed(2)}\nDAMPING=0.0\nWAV=\nWAV_PITCH=0\nFF_EFFECT=${ff}\nDIRT_ADDITIVE=${ok ? 0 : 1}\nIS_VALID_TRACK=${ok}\nBLACK_FLAG_TIME=${ok ? 0 : 3}\nSIN_HEIGHT=0\nSIN_LENGTH=0\nIS_PITLANE=0\nVIBRATION_GAIN=0\nVIBRATION_LENGTH=0\n`).join('\n');
+}
+const BLENDER_PY = String.raw`# Lancé par Blender : blender -b -P build_fbx.py
+import bpy, json, math, os
+here = os.path.dirname(os.path.abspath(__file__))
+data = json.load(open(os.path.join(here, 'markers.json')))
+name, M = data['track'], data['markers']
+bpy.ops.wm.read_factory_settings(use_empty=True)
+bpy.ops.wm.obj_import(filepath=os.path.join(here, name + '.obj'), forward_axis='NEGATIVE_Z', up_axis='Y')
+ROT_OFFSET = -math.pi / 2          # si les flèches AC pointent à l'envers dans KsEditor, change cette valeur
+for m in M:
+    e = bpy.data.objects.new(m['name'], None)
+    e.empty_display_type = 'ARROWS'; e.empty_display_size = 2
+    e.location = (m['x'], -m['z'], m['y'])
+    e.rotation_euler = (0, 0, math.atan2(-m['hz'], m['hx']) + ROT_OFFSET)
+    bpy.context.scene.collection.objects.link(e)
+out = os.path.abspath(os.path.join(here, '..', name + '.fbx'))
+bpy.ops.export_scene.fbx(filepath=out, axis_forward='-Z', axis_up='Y', global_scale=1.0,
+                         apply_unit_scale=True, apply_scale_options='FBX_SCALE_ALL',
+                         object_types={'MESH', 'EMPTY'}, bake_anim=False, mesh_smooth_type='FACE')
+print('FBX écrit :', out)
+`;
+function buildPack(name, P, o, map){
+  const closed = Math.hypot(P[0].x - P[P.length - 1].x, P[0].z - P[P.length - 1].z) < o.step * 3;
+  if (closed) P = P.slice(0, -1);
+  acSmooth(P, o.smooth, closed);
+  const F = acFrames(P, closed);
+  const total = F.dist[F.dist.length - 1] + (closed ? Math.hypot(P[0].x - P[P.length - 1].x, P[0].z - P[P.length - 1].z) : 0);
+  const M = acMarkers(P, F, o, closed), enc = new TextEncoder(), T = s => enc.encode(s);
+  const ui = { name: name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()), description: 'Piste générée avec AC Track Mapper.',
+    tags: ['road', closed ? 'circuit' : 'point to point'], country: o.country, city: o.city, length: Math.round(total) + ' m',
+    width: o.w + ' m', pitboxes: String(o.pits), run: 'clockwise', author: '', version: '1.0', year: 2026 };
+  const r = name + '/';
+  return { closed, total, files: [
+    { name: r + 'LISEZ-MOI.txt', data: T('1. Ouvre un terminal dans source/ et lance :  blender -b -P build_fbx.py\n   (ou importe ' + name + '.obj dans Blender à la main, 1 unité = 1 m, Y haut)\n2. Ouvre ' + name + '.fbx dans KsEditor, vérifie les flèches AC_START, assigne les textures, exporte en .kn5\n3. Copie le dossier dans assettocorsa/content/tracks/\n4. Roule un tour en jeu pour enregistrer data/fast_lane.ai\n') },
+    { name: r + 'source/' + name + '.obj', data: T(acMesh(P, F, o, closed)) },
+    { name: r + 'source/markers.json', data: T(JSON.stringify({ track: name, markers: M }, null, 1)) },
+    { name: r + 'source/build_fbx.py', data: T(BLENDER_PY) },
+    { name: r + 'data/surfaces.ini', data: T(acSurfaces()) },
+    { name: r + 'data/map.ini', data: T(map.ini) },
+    { name: r + 'ui/ui_track.json', data: T(JSON.stringify(ui, null, 2)) },
+    { name: r + 'ui/outline.png', data: map.png },
+    { name: r + 'map.png', data: map.png }
+  ], P };
+}
+/* PACK:END */
+
+async function acMap(P, closed){
+  let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+  P.forEach(p => { a = Math.min(a, p.x); b = Math.max(b, p.x); c = Math.min(c, p.z); d = Math.max(d, p.z); });
+  const size = 1024, mg = 40, sc = (Math.max(b - a, d - c) / (size - 2 * mg)) || 1;
+  const xo = -a + mg * sc, zo = -c + mg * sc, W = Math.round((b - a) / sc + 2 * mg), H = Math.round((d - c) / sc + 2 * mg);
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'); g.strokeStyle = '#fff'; g.lineWidth = 3; g.lineJoin = 'round'; g.beginPath();
+  P.forEach((p, i) => { const x = (p.x + xo) / sc, y = (p.z + zo) / sc; i ? g.lineTo(x, y) : g.moveTo(x, y); });
+  if (closed) g.closePath();
+  g.stroke();
+  const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+  return { png: new Uint8Array(await blob.arrayBuffer()),
+    ini: `[PARAMETERS]\nWIDTH=${W}\nHEIGHT=${H}\nMARGIN=20\nSCALE_FACTOR=${sc.toFixed(4)}\nX_OFFSET=${xo.toFixed(2)}\nZ_OFFSET=${zo.toFixed(2)}\nDRAWING_SIZE=10\n` };
+}
+
+const SRV = { ok: false, base: '', blender: null };
+(async () => {
+  const bases = (location.protocol.startsWith('http') ? [''] : []).concat(['http://localhost:8765']);
+  for (const b of bases) {
+    try {
+      const j = await (await fetch(b + '/api/status')).json();
+      if (j.ok) { SRV.ok = true; SRV.base = b; SRV.blender = j.blender; break; }
+    } catch (e) {}
+  }
+  $('srv').textContent = SRV.ok
+    ? 'Serveur local connecté. ' + (SRV.blender ? 'Blender détecté : le .fbx sera inclus dans le zip.' : 'Blender introuvable : le zip contiendra le script build_fbx.py.')
+    : 'Serveur local absent : génération dans le navigateur, sans décor, textures ni .fbx (lance server.py).';
+  document.querySelectorAll('.scen').forEach(e => e.disabled = !SRV.ok);
+})();
+
+function saveBlob(blob, filename){
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+}
+
+$('pack').onclick = async () => {
+  if (path.length < 2) return say('Trace d\'abord un parcours complet.', true);
+  const name = ($('tname').value || 'ma_piste').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9_]+/g, '_').replace(/^_+|_+$/g, '') || 'ma_piste';
+  const o = { w: Math.max(2, +$('width').value || 9), step: Math.max(1, +$('step').value || 3), kerb: 1,
+    grass: Math.max(0, +$('grass').value || 15), walls: $('walls').checked, grid: Math.max(1, +$('grid').value || 4),
+    pits: Math.max(0, +$('pits').value || 0), smooth: 4, city: $('city').value, country: $('country').value };
+  const pts = resample(o.step);
+  if (pts.length > 20000) return say('Trop de points (' + pts.length + '). Augmente l\'espacement.', true);
+  try {
+    if ($('elev').checked) { try { say('Lecture des altitudes…'); await addElevation(pts); } catch (e) { say('Altitude indisponible (' + e.message + '), piste à plat.', true); } }
+    if (SRV.ok) {
+      try {
+        say('Génération sur le serveur local…');
+        const r = await fetch(SRV.base + '/api/build', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, coords: pts.map(p => [p.lng, p.lat, p.y]),
+            scenery: { enabled: $('bld').checked || $('veg').checked, buildings: $('bld').checked, trees: $('veg').checked,
+              margin: +$('margin').value || 200, density: +$('density').value || 25 },
+            options: { width: o.w, step: o.step, grass: o.grass, kerb: o.kerb, walls: o.walls, grid: o.grid, pits: o.pits, smooth: o.smooth, city: o.city, country: o.country } }) });
+        if (!r.ok) { let m = 'erreur ' + r.status; try { m = (await r.json()).error; } catch (e) {} throw new Error(m); }
+        saveBlob(await r.blob(), name + '.zip');
+        const km = (r.headers.get('X-AC-Total') / 1000).toFixed(2), fbx = r.headers.get('X-AC-Fbx') === '1', be = decodeURIComponent(r.headers.get('X-AC-Blender-Error') || '');
+        let sc = {}; try { sc = JSON.parse(decodeURIComponent(r.headers.get('X-AC-Scenery') || '{}')); } catch (e) {}
+        const decor = sc.stats ? ' Décor : ' + sc.stats.buildings + ' bâtiments, ' + sc.stats.trees + ' arbres.' : sc.error ? ' Décor indisponible (' + sc.error.slice(0, 90) + ').' : '';
+        say('Pack prêt (' + km + ' km).' + decor + ' ' + (fbx ? 'le .fbx est inclus, passe à KsEditor.' : SRV.blender ? 'Blender a échoué' + (be ? ' (' + be.slice(-120) + ')' : '') + ', lance build_fbx.py à la main.' : 'lance build_fbx.py avec Blender pour obtenir le .fbx.'), (SRV.blender && !fbx) || !!sc.error);
+        return;
+      } catch (e) { say('Serveur : ' + e.message + ' – repli sur le mode navigateur.', true); await new Promise(r => setTimeout(r, 1200)); }
+    }
+    const closed = Math.hypot(pts[0].x - pts[pts.length - 1].x, pts[0].z - pts[pts.length - 1].z) < o.step * 3;
+    const map = await acMap(pts, closed);
+    const r = buildPack(name, pts, o, map);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(zipBlob(r.files)); a.download = name + '.zip';
+    document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 3000);
+    say('Pack prêt : ' + name + '.zip (' + (r.total / 1000).toFixed(2) + ' km, ' + (r.closed ? 'boucle' : 'point à point') + ').');
+  } catch (e) { say(e.message, true); }
+};
+</script>
+</body>
+</html>
