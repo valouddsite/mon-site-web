@@ -463,12 +463,14 @@ function createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, roadWidth
   // Terrain maillé autour du circuit : suit le profil de la route près des accotements,
   // puis s'en éloigne progressivement avec de faibles ondulations naturelles.
   if (!pts || pts.length < 2) return null;
-  const margin = Math.max(100, shoulder * 5);
+  // Terrain étendu bien au-delà de la piste : au moins 1 km de marge de chaque côté.
+  // Le nombre de cellules reste plafonné pour préserver les performances sur mobile.
+  const margin = Math.max(1000, shoulder * 20);
   const minX = bounds.minX - margin, maxX = bounds.maxX + margin;
   const minZ = bounds.minZ - margin, maxZ = bounds.maxZ + margin;
   const spanX = Math.max(1, maxX - minX), spanZ = Math.max(1, maxZ - minZ);
-  const nx = Math.max(32, Math.min(100, Math.ceil(spanX / 12)));
-  const nz = Math.max(32, Math.min(100, Math.ceil(spanZ / 12)));
+  const nx = Math.max(48, Math.min(100, Math.ceil(spanX / 24)));
+  const nz = Math.max(48, Math.min(100, Math.ceil(spanZ / 24)));
   // Sous-échantillonnage pour garder le calcul rapide sur les longues pistes.
   const stride = Math.max(1, Math.ceil((pts.length - 1) / 900));
   const route = [];
