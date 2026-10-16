@@ -492,11 +492,14 @@ function createSurroundingTerrain(THREE, scene, pts, bounds, shoulder, roadWidth
         }
       }
       const distance = Math.sqrt(best);
-      const fade = Math.max(0, Math.min(1, (distance - roadWidth/2 - shoulder) / 45));
+      // Garde le terrain strictement sous la surface de la route et de ses accotements.
+      // Les ondulations commencent à l'extérieur de la zone roulable et ne peuvent
+      // plus remonter au-dessus de la chaussée.
+      const roadEdge = roadWidth / 2 + shoulder + 2;
+      const fade = Math.max(0, Math.min(1, (distance - roadEdge) / 45));
       const wave = (Math.sin(x * 0.018) * Math.cos(z * 0.014) * 1.1 +
                     Math.sin((x + z) * 0.008) * 1.4) * fade;
-      const edgeBlend = Math.max(0, Math.min(1, distance / 14));
-      const y = routeY - 0.24 + wave * edgeBlend;
+      const y = routeY - 0.4 - Math.abs(wave);
       verts.push(x, y, z);
       if (ix < nx && iz < nz) {
         const a = iz*(nx+1)+ix, b=a+1, d=(iz+1)*(nx+1)+ix, e=d+1;
