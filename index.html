@@ -358,8 +358,8 @@ async function open3D(){
   $('preview3d').classList.add('show');
   say('Préparation du rendu 3D…');
   try {
-    const THREE = await import('https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js');
-    const { OrbitControls } = await import('https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/controls/OrbitControls.js');
+    const THREE = await import('https://esm.sh/three@0.164.1');
+    const { OrbitControls } = await import('https://esm.sh/three@0.164.1/examples/jsm/controls/OrbitControls.js');
     const pts = resample(Math.max(2, +$('step').value || 3));
     if ($('elev').checked && elevSvc) {
       try { await addElevation(pts); } catch(e) { console.warn('Altitude indisponible pour l’aperçu 3D', e); }
