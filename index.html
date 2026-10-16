@@ -1117,6 +1117,45 @@ function acMesh(P, F, o, closed){
   rib('1GRASS_R', w / 2 + k + g, w / 2 + k, -.05, 10);
   rib('1GRASS_L', -w / 2 - k, -w / 2 - k - g, -.05, 10);
   if (o.walls) { wall('1WALL_R', w / 2 + k + g, 1.2); wall('1WALL_L', -(w / 2 + k + g), 1.2); }
+  // Terrain exporté aussi dans le ZIP navigateur, même sans serveur local.
+  {
+    const margin = 1000, minX = Math.min(...P.map(p => p.x)) - margin;
+    const maxX = Math.max(...P.map(p => p.x)) + margin;
+    const minZ = Math.min(...P.map(p => p.z)) - margin;
+    const maxZ = Math.max(...P.map(p => p.z)) + margin;
+    const sx = maxX - minX, sz = maxZ - minZ;
+    const nx = Math.max(32, Math.min(72, Math.ceil(sx / 28)));
+    const nz = Math.max(32, Math.min(72, Math.ceil(sz / 28)));
+    const stride = Math.max(1, Math.floor(P.length / 700)), ref = P.filter((_, i) => i % stride === 0);
+    if (ref[ref.length - 1] !== P[P.length - 1]) ref.push(P[P.length - 1]);
+    const base = st.base + 1, row = nx + 1, edge = w / 2 + k + g;
+    L.push('o 1TERRAIN');
+    for (let iz = 0; iz <= nz; iz++) {
+      const z = minZ + sz * iz / nz;
+      for (let ix = 0; ix <= nx; ix++) {
+        const x = minX + sx * ix / nx;
+        let d2 = Infinity, nearest = ref[0];
+        for (const p of ref) {
+          const q = (p.x - x) ** 2 + (p.z - z) ** 2;
+          if (q < d2) { d2 = q; nearest = p; }
+        }
+        const d = Math.sqrt(d2), fade = Math.max(0, Math.min(1, (d - edge) / 45));
+        const wave = (Math.sin(x * .018) * Math.cos(z * .014) * 1.1 + Math.sin((x + z) * .008) * 1.4) * fade;
+        const y = nearest.y - .35 - Math.abs(wave) - Math.max(0, d - edge) * .003;
+        L.push('v ' + x.toFixed(3) + ' ' + y.toFixed(3) + ' ' + z.toFixed(3));
+      }
+    }
+    for (let iz = 0; iz <= nz; iz++) for (let ix = 0; ix <= nx; ix++) {
+      const x = minX + sx * ix / nx, z = minZ + sz * iz / nz;
+      L.push('vt ' + (x / 30).toFixed(4) + ' ' + (z / 30).toFixed(4));
+    }
+    for (let iz = 0; iz < nz; iz++) for (let ix = 0; ix < nx; ix++) {
+      const a = base + iz * row + ix, b = a + 1, d = a + row, e = d + 1;
+      L.push('f ' + a + '/' + a + ' ' + d + '/' + d + ' ' + e + '/' + e);
+      L.push('f ' + a + '/' + a + ' ' + e + '/' + e + ' ' + b + '/' + b);
+    }
+    st.base += (nx + 1) * (nz + 1);
+  }
   return L.join('\n') + '\n';
 }
 function acMarkers(P, F, o, closed){
