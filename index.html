@@ -411,9 +411,9 @@ async function addElevation(pts){
   // Référence relative au départ, tout en conservant le profil vertical mesuré.
   const base = pts[0].y;
   const raw = pts.map(p => p.y - base);
-  // Lissage spatial sur 4 m de chaque côté : rend les montées/descentes progressives
-  // et élimine les cassures dues au bruit d'altitude, sans dépendre du pas d'échantillonnage.
-  const radius = 4;
+  // Lissage spatial sur 8 m de chaque côté : rend les transitions d'altitude
+  // plus progressives sans dépendre du pas d'échantillonnage.
+  const radius = 8;
   const filtered = raw.map((value, i) => {
     let sum = 0, weights = 0;
     for (let j = i; j >= 0; j--) {
@@ -832,8 +832,9 @@ async function open3D(){
     const originLat = path[0].lat() * Math.PI / 180, originLng = path[0].lng() * Math.PI / 180;
     const cosLat = Math.cos(originLat);
     pts.forEach(p=>{p.x-=cx;p.z-=cz;p.y-=bounds.minY;});
-    // Plus de points et des angles arrondis pour une route visuellement plus fluide.
-    pts = smoothPreviewPoints(pts, pts.length > 10000 ? 1 : 2);
+    // Arrondit davantage les virages sur les parcours raisonnables ; les très longs
+    // tracés gardent moins de passes pour limiter le coût mémoire du rendu.
+    pts = smoothPreviewPoints(pts, pts.length > 10000 ? 1 : pts.length > 6000 ? 2 : 3);
     const width=Math.max(2,+$('width').value||9), shoulder=Math.max(0,+$('grass').value||15);
     const makeRibbon=(leftOffset,rightOffset,yOffset,material,name)=>{
       const verts=[], indices=[];
