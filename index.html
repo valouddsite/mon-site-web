@@ -147,7 +147,7 @@ code{background:#17191b;padding:1px 5px;border-radius:4px;font-size:12px}
     <label><span>Végétation (OpenStreetMap)</span><input type="checkbox" id="veg" class="scen" checked></label>
     <label><span>Zone de décor autour du tracé (m)</span><input type="number" id="margin" class="scen" value="200" min="50" max="600" step="50"></label>
     <label><span>Arbres par hectare en forêt</span><input type="number" id="density" class="scen" value="25" min="5" max="120"></label>
-    <label><span>Un point tous les (m)</span><input type="number" id="step" value="3" min="1" max="50"></label>
+    <label><span>Un point tous les (m)</span><input type="number" id="step" value="1" min="1" max="50"></label>
     <label><span>Ajouter l'altitude (Elevation API)</span><input type="checkbox" id="elev" checked></label>
     <button class="main" id="pack" style="margin-top:8px">Générer le pack (.zip)</button>
     <div id="srv" class="hint" style="margin-top:8px">Recherche du serveur local…</div>
@@ -754,7 +754,7 @@ async function open3D(){
     const THREE = await import('three');
     const { OrbitControls } = await import('three/addons/controls/OrbitControls.js');
     set3DLoading(16, 'Préparation de la route', 'Rééchantillonnage du tracé et calcul des courbes.');
-    let pts = resample(Math.max(2, +$('step').value || 3));
+    let pts = resample(Math.max(1, +$('step').value || 1));
     if ($('elev').checked && elevSvc) {
       try { set3DLoading(24, 'Calcul du relief', 'Récupération des altitudes du parcours.'); await addElevation(pts); } catch(e) { console.warn('Altitude indisponible pour l’aperçu 3D', e); }
     }
